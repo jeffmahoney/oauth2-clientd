@@ -1,0 +1,222 @@
+#!/usr/bin/python3
+
+import os
+import os.path
+import argparse
+import sys
+import time
+import signal
+import shutil
+import getpass
+
+from typing import Any, Dict, Optional, Sequence
+
+import daemon # type: ignore
+from oauthlib.oauth2.rfc6749.errors import OAuth2Error
+
+from oauth2_client import OAuth2Client, NoTokenError, NoPrivateKeyError
+
+registrations: Dict[str, Dict[str, Sequence[str]]] = {
+    # Untested
+    # 'google': {
+    #     'authorize_endpoint': 'https://accounts.google.com/o/oauth2/auth',
+    #     'devicecode_endpoint': 'https://oauth2.googleapis.com/device/code',
+    #     'token_endpoint': 'https://accounts.google.com/o/oauth2/token',
+    #     'redirect_uri': 'urn:ietf:wg:oauth:2.0:oob',
+    #     'imap_endpoint': 'imap.gmail.com',
+    #     'pop_endpoint': 'pop.gmail.com',
+    #     'smtp_endpoint': 'smtp.gmail.com',
+    #     'sasl_method': 'OAUTHBEARER',
+    #     'scope': 'https://mail.google.com/',
+    # },
+    'microsoft': {
+        'authorize_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+        'devicecode_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/devicecode',
+        'token_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        #'redirect_uri': 'https://login.microsoftonline.com/common/oauth2/nativeclient',
+        'redirect_uri' : 'http://localhost',
+        'tenant' : 'mysuse.onmicrosoft.com',
+        'imap_endpoint': 'outlook.office365.com',
+        'pop_endpoint': 'outlook.office365.com',
+        'smtp_endpoint': 'smtp.office365.com',
+        'sasl_method': 'XOAUTH2',
+        'scope': ('offline_access https://outlook.office.com/IMAP.AccessAsUser.All',
+                  'https://outlook.office.com/POP.AccessAsUser.All',
+                  'https://outlook.office.com/SMTP.Send'),
+    },
+}
+DEFAULT_PROVIDER = 'microsoft'
+
+def shutdown_listeners_and_exit(oaclient: OAuth2Client) -> None:
+    print("Shutting down", file=sys.stderr, flush=True)
+    oaclient.stop_file_writer()
+    oaclient.stop_socket_listener()
+    sys.exit(0)
+
+class SignalHandler:
+    def __init__(self, client: OAuth2Client) -> None:
+        self.client = client
+
+    def __call__(self, signum: int, trace: Any) -> None:
+        shutdown_listeners_and_exit(self.client)
+
+def token_needs_refreshing(token: Dict[str, Any], threshold: int = 300) -> bool:
+    return token['expires_at'] + threshold > time.time()
+
+def wait_for_refresh_timeout(oaclient: OAuth2Client,
+                             thresh: int = -1) -> None:
+    if not oaclient.token:
+        raise NoTokenError("No token to refresh")
+
+    if thresh == -1:
+        thresh = oaclient.refresh_timeout_thresh
+
+    timeout = oaclient.access_token_expiry - thresh - time.time()
+
+    if timeout > 0:
+        if oaclient.verbose:
+            print(f"Waiting {int(timeout)}s to refresh token.", file=sys.stderr)
+        time.sleep(timeout)
+    else:
+        if oaclient.debug:
+            print("Token has expired.", file=sys.stderr)
+
+def main_loop(oaclient: OAuth2Client, sockname: Optional[str], filename: Optional[str],
+              debug: bool = False) -> None:
+    threshold = 300
+
+    if not oaclient.token:
+        raise NoTokenError("No token to monitor")
+    if sockname:
+        oaclient.start_socket_listener(sockname)
+
+    if filename:
+        oaclient.start_file_writer(filename)
+
+    try:
+        while True:
+            oaclient.wait_for_refresh_timeout(threshold)
+            if debug or not sys.stderr.isatty():
+                print("Wait for refresh complete", file=sys.stderr, flush=True)
+            oaclient.refresh_token()
+
+            if debug and not filename and not sockname:
+                print("\nBEGIN ACCESS TOKEN")
+                if oaclient.token and 'access_token' in oaclient.token:
+                    print(oaclient.token['access_token'])
+                else:
+                    raise NoTokenError("Token was supposed to be refreshed but is missing")
+    except KeyboardInterrupt:
+        shutdown_listeners_and_exit(oaclient)
+
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='increase verbosity')
+    parser.add_argument('-d', '--debug', action='store_true',
+                        help='enable debug output')
+    parser.add_argument('-a', '--authorize', type=str, dest='clientid',
+                        help='generate a new refresh token on startup if required with clientid')
+    parser.add_argument('-p', '--port', type=int, default=-1,
+                        help='specify port for http server (useful for tunneling to remote host)')
+    parser.add_argument('-D', '--daemonize', type=str, dest='logfile',
+                        help='detach and daemonize after user interaction is complete, logging to file')
+    parser.add_argument('-f', '--file', type=str, default=None,
+                        help='write access token to <file> (periodically, prior to expiration, if in daemon mode)')
+    parser.add_argument('-s', '--socket', type=str, default=None,
+                        help='create a UNIX socket at <socket> with an http listener to provide access token on request')
+    parser.add_argument('-P', '--provider', type=str, default=DEFAULT_PROVIDER,
+                        choices=registrations.keys(),
+                        help=f'provider to request tokens (default={DEFAULT_PROVIDER})')
+    parser.add_argument('-q', '--quiet', action='store_true', help='limit unnecessary output')
+    parser.add_argument('--force', action='store_true', help='overwrite sessionfile if it exists')
+    parser.add_argument('sessionfile', help='path to store encrypted session and refresh token')
+    return parser.parse_args()
+
+def main():
+    args = parse_arguments()
+
+    try:
+        if args.clientid:
+            client_data = {
+                'client_id' : args.clientid,
+            }
+
+            if os.path.exists(args.sessionfile) and not args.force:
+                print(f"{args.sessionfile} already exists.  Exiting.", file=sys.stderr)
+                sys.exit(1)
+
+            try:
+                secret = getpass.getpass(f"Secret for clientid {args.clientid} (leave empty if there is no secret): ")
+            except (EOFError, KeyboardInterrupt):
+                print("\nFailed to obtain client secret.  Exiting.", file=sys.stderr)
+                sys.exit(1)
+
+            if secret:
+                client_data['client_secret'] = secret
+
+            registration = registrations[args.provider]
+            if 'tenant' in registration:
+                client_data['tenant'] = registration['tenant']
+            try:
+                oaclient = OAuth2Client.from_new_authorization(registration, client_data,
+                                                               args.port, debug=args.debug,
+                                                               verbose=args.verbose)
+            except OAuth2Error as ex:
+                print(f"Failed to obtain authorization: {str(ex)}.  Exiting.",
+                      file=sys.stderr)
+                if args.debug:
+                    raise ex from ex
+                sys.exit(1)
+            oaclient.save_session(args.sessionfile)
+        else:
+            try:
+                oaclient = OAuth2Client.from_saved_session(args.sessionfile,
+                                                           debug=args.debug, verbose=args.verbose)
+                if not oaclient.token:
+                    raise NoTokenError("Session didn't contain valid session.")
+                if token_needs_refreshing(oaclient.token):
+                    oaclient.refresh_token()
+            except (FileNotFoundError, PermissionError) as ex:
+                print(f"Couldn't open session file: {str(ex)}", file=sys.stderr)
+                sys.exit(1)
+    except NoPrivateKeyError as ex:
+        print(f"\n{str(ex)} Exiting.", file=sys.stderr)
+        sys.exit(1)
+
+    if not args.file and not args.socket:
+        columns = shutil.get_terminal_size((80, 25))[0]
+        if not args.quiet:
+            print("No file or socket was specified.  Exiting.")
+            print("Current access token follows:")
+            print(columns * '-')
+        print(oaclient.token['access_token'])
+        if not args.quiet:
+            print(columns * '-')
+        sys.exit(0)
+
+    filename: Optional[str] = None
+    if args.file:
+        filename = os.path.realpath(args.file)
+
+    sockname: Optional[str] = None
+    if args.socket:
+        sockname = os.path.realpath(args.socket)
+
+    if args.daemonize:
+        with open(args.daemonize, 'w+') as logfile:
+            context = daemon.DaemonContext(files_preserve=[logfile])
+            context.signal_map = {
+                signal.SIGTERM: SignalHandler,
+                signal.SIGHUP: 'terminate',
+            }
+
+            with context:
+                sys.stdout = logfile
+                sys.stderr = logfile
+                main_loop(oaclient, sockname, filename)
+    else:
+        main_loop(oaclient, sockname, filename)
+
+if __name__ == '__main__':
+    main()

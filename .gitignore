@@ -1,0 +1,7 @@
+.mypy_cache
+.*.swp
+*.egg-info
+build
+dist
+*~
+__pycache__
