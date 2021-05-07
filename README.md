@@ -43,19 +43,22 @@ file on disk.
 
 oauth2-clientd exports tokens in two ways:
 
+The following options can be used to start up an HTTP listener on the specified
+UNIX socket.  If the socket exists it will be removed and replaced.
+
     $ oauth2-clientd -s /path/to/socket /path/to/authfile
 
 
-... will start up an HTTP listener on the specified UNIX socket.  If the
-socket exists, it be will removed and replaced.  Your MUA can be configured
-to retreive the access token with a simple command:
-$ curl --unix-socket /path/to/socket http://localhost
+Your MUA can be configured to retreive the access token with a simple command:
+
+    $ curl --unix-socket /path/to/socket http://localhost
+
+
+If your client requires a plaintext file, the following command will write out
+such a file each time the token is refreshed:
 
     $ oauth2-clientd -f /path/to/file /path/to/authfile
 
-
-... will write the access token to the specified file each time it
-is refreshed.
 
 Both options can be used at the same time but each can only be specified once.
 
