@@ -520,8 +520,8 @@ class OAuth2Client:
 
             if needs_write:
                 self._write_and_rename(my_token, filename)
-
-            if self._file_thread_exit:
+            if self._file_thread_exit.is_set():
+                self._debug("_file_writer: Exiting")
                 break
 
     @staticmethod
@@ -550,6 +550,8 @@ class OAuth2Client:
         if self._file_thread:
             self._debug("Telling file thread to exit")
             self._file_thread_exit.set()
+            with self.token_changed:
+                self.token_changed.notify()
             self._debug("Waiting for file thread to exit")
             self._file_thread.join()
             self._debug("File thread has exited")
