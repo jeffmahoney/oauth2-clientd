@@ -6,6 +6,18 @@ headless Mail User Agents (MUAs) like fetchmail or mutt.
 It can obtain a refresh token, securely store it, periodically update it,
 and return access tokens on-demand via either a plaintext file or UNIX socket.
 
+## Installation
+
+You will need the following dependencies:
+
+    $ pip3 install --user oauthlib requests-oauthlib python-daemon
+
+
+Then to install:
+
+    $ python3 setup.py install --user
+
+
 ## Getting started
 
 To get started, you'll need to generate a refresh token.
