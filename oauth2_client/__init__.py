@@ -519,6 +519,7 @@ class OAuth2Client:
                 raise NoTokenError("Access token changed but is unavailable.")
 
             if needs_write:
+                self._log(f"Writing out new access token to {filename}")
                 self._write_and_rename(my_token, filename)
             if self._file_thread_exit.is_set():
                 self._debug("_file_writer: Exiting")
