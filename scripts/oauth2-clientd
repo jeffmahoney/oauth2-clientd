@@ -131,7 +131,10 @@ def parse_arguments():
     parser.add_argument('-q', '--quiet', action='store_true', help='limit unnecessary output')
     parser.add_argument('--force', action='store_true', help='overwrite sessionfile if it exists')
     parser.add_argument('sessionfile', help='path to store encrypted session and refresh token')
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.debug:
+        args.verbose = True
+    return args
 
 def main():
     args = parse_arguments()
