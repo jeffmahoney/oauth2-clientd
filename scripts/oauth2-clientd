@@ -95,7 +95,7 @@ def main_loop(oaclient: OAuth2Client, sockname: Optional[str], filename: Optiona
 
     try:
         while True:
-            oaclient.wait_for_refresh_timeout(threshold)
+            wait_for_refresh_timeout(oaclient, threshold)
             if debug or not sys.stderr.isatty():
                 print("Wait for refresh complete", file=sys.stderr, flush=True)
             oaclient.refresh_token()
@@ -203,9 +203,9 @@ def main():
     if args.socket:
         sockname = os.path.realpath(args.socket)
 
-    if args.daemonize:
-        with open(args.daemonize, 'w+') as logfile:
-            context = daemon.DaemonContext(files_preserve=[logfile])
+    if args.logfile:
+        with open(args.logfile, 'w+') as logfile:
+            context = daemon.Context(files_preserve=[logfile])
             context.signal_map = {
                 signal.SIGTERM: SignalHandler,
                 signal.SIGHUP: 'terminate',
