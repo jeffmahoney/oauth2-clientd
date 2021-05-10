@@ -8,7 +8,7 @@ import http.server
 import socket
 import select
 import sys
-import urllib
+import urllib.parse
 import json
 import secrets
 import hashlib
@@ -39,7 +39,7 @@ try:
     from http.server import ThreadingHTTPServer
 except ImportError:
     from socketserver import ThreadingMixIn
-    class ThreadingHTTPServer(ThreadingMixIn, http.server.HTTPServer):
+    class ThreadingHTTPServer(ThreadingMixIn, http.server.HTTPServer): # type: ignore
         daemon_threads = True
 
 
@@ -114,7 +114,7 @@ class _TokenSocketHandler(http.server.BaseHTTPRequestHandler):
 class _ThreadingHTTPServerWithContext(ThreadingHTTPServer):
     def __init__(self, address: Tuple[str, int],
                  handler: Type[http.server.BaseHTTPRequestHandler],
-                 context: 'OAuth2Client'):
+                 context: 'OAuth2ClientManager'):
         super().__init__(address, handler)
         self.context = context
 
@@ -122,7 +122,7 @@ class _UnixSocketThreadingHTTPServer(_ThreadingHTTPServerWithContext):
     address_family = socket.AF_UNIX
     def __init__(self, filename: str,
                  handler: Type[http.server.BaseHTTPRequestHandler],
-                 context: 'OAuth2Client') -> None:
+                 context: 'OAuth2ClientManager') -> None:
         super().__init__((filename, 0), handler, context)
 
     def server_bind(self) -> None:
@@ -132,7 +132,7 @@ class _UnixSocketThreadingHTTPServer(_ThreadingHTTPServerWithContext):
         req, _ = super().get_request()
         return req, self.server_address
 
-class OAuth2Client:
+class OAuth2ClientManager:
     def __init__(self, registration: Dict[str, Sequence[str]],
                  client: Dict[str, str], debug: bool = False,
                  verbose: bool = False) -> None:
@@ -205,7 +205,7 @@ class OAuth2Client:
 
     @classmethod
     def from_saved_session(cls, path: str, debug: bool = False,
-                           verbose: bool = False) -> "OAuth2Client":
+                           verbose: bool = False) -> "OAuth2ClientManager":
         with open(path, 'rb') as session_file:
             saved_session = json.loads(session_file.read())
 

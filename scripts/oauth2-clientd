@@ -14,7 +14,8 @@ from typing import Any, Dict, Optional, Sequence
 import daemon # type: ignore
 from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 
-from oauth2_client import OAuth2Client, NoTokenError, NoPrivateKeyError
+from oauth2_clientmanager import OAuth2ClientManager
+from oauth2_clientmanager import NoTokenError, NoPrivateKeyError
 
 registrations: Dict[str, Dict[str, Sequence[str]]] = {
     # Untested
@@ -47,14 +48,14 @@ registrations: Dict[str, Dict[str, Sequence[str]]] = {
 }
 DEFAULT_PROVIDER = 'microsoft'
 
-def shutdown_listeners_and_exit(oaclient: OAuth2Client) -> None:
+def shutdown_listeners_and_exit(oaclient: OAuth2ClientManager) -> None:
     print("Shutting down", file=sys.stderr, flush=True)
     oaclient.stop_file_writer()
     oaclient.stop_socket_listener()
     sys.exit(0)
 
 class SignalHandler:
-    def __init__(self, client: OAuth2Client) -> None:
+    def __init__(self, client: OAuth2ClientManager) -> None:
         self.client = client
 
     def __call__(self, signum: int, trace: Any) -> None:
@@ -63,7 +64,7 @@ class SignalHandler:
 def token_needs_refreshing(token: Dict[str, Any], threshold: int = 300) -> bool:
     return token['expires_at'] + threshold > time.time()
 
-def wait_for_refresh_timeout(oaclient: OAuth2Client,
+def wait_for_refresh_timeout(oaclient: OAuth2ClientManager,
                              thresh: int = -1) -> None:
     if not oaclient.token:
         raise NoTokenError("No token to refresh")
@@ -81,7 +82,7 @@ def wait_for_refresh_timeout(oaclient: OAuth2Client,
         if oaclient.debug:
             print("Token has expired.", file=sys.stderr)
 
-def main_loop(oaclient: OAuth2Client, sockname: Optional[str], filename: Optional[str],
+def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str], filename: Optional[str],
               debug: bool = False) -> None:
     threshold = 300
 
@@ -162,7 +163,7 @@ def main():
             if 'tenant' in registration:
                 client_data['tenant'] = registration['tenant']
             try:
-                oaclient = OAuth2Client.from_new_authorization(registration, client_data,
+                oaclient = OAuth2ClientManager.from_new_authorization(registration, client_data,
                                                                args.port, debug=args.debug,
                                                                verbose=args.verbose)
             except OAuth2Error as ex:
@@ -174,7 +175,7 @@ def main():
             oaclient.save_session(args.sessionfile)
         else:
             try:
-                oaclient = OAuth2Client.from_saved_session(args.sessionfile,
+                oaclient = OAuth2ClientManager.from_saved_session(args.sessionfile,
                                                            debug=args.debug, verbose=args.verbose)
                 if not oaclient.token:
                     raise NoTokenError("Session didn't contain valid session.")
