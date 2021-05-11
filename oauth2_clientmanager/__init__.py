@@ -17,6 +17,7 @@ import time
 import getpass
 import shutil
 import signal
+import stat
 
 from typing import cast, Any, Dict, Optional, Sequence, Tuple, Type, Union
 
@@ -564,7 +565,11 @@ class OAuth2ClientManager:
         self._debug(f"Starting HTTP listener on {filename}")
 
         if os.path.exists(filename):
-            os.unlink(filename)
+            sock_stat = os.stat(filename)
+            if stat.S_ISSOCK(sock_stat.st_mode):
+                os.unlink(filename)
+            else:
+                raise OSError("{filename} already exists but is not a socket.  Will not replace.")
         self._server = _UnixSocketThreadingHTTPServer(filename, _TokenSocketHandler, self)
         self._server.context = self
         os.chmod(filename, 0o600)
