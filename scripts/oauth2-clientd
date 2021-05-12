@@ -209,7 +209,7 @@ def main():
 
     if args.logfile:
         with open(args.logfile, 'w+') as logfile:
-            context = daemon.Context(files_preserve=[logfile])
+            context = daemon.DaemonContext(files_preserve=[logfile])
             context.signal_map = {
                 signal.SIGTERM: SignalHandler,
                 signal.SIGHUP: 'terminate',
