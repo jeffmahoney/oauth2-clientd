@@ -172,7 +172,7 @@ def main():
                 if args.debug:
                     raise ex from ex
                 sys.exit(1)
-            oaclient.save_session(args.sessionfile)
+            oaclient.save_session(args.sessionfile, overwrite=args.force)
         else:
             try:
                 oaclient = OAuth2ClientManager.from_saved_session(args.sessionfile,

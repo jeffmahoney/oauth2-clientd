@@ -21,6 +21,8 @@ import stat
 
 from typing import cast, Any, Dict, Optional, Sequence, Tuple, Type, Union
 
+from atomicwrites import atomic_write
+
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
@@ -313,7 +315,7 @@ class OAuth2ClientManager:
 
         return encrypted_data, params
 
-    def save_session(self, path: Optional[str] = None):
+    def save_session(self, path: Optional[str] = None, overwrite: bool = True):
         if path is None and self.session_file_path:
             path = self.session_file_path
         elif self.session_file_path is None and path:
@@ -337,7 +339,9 @@ class OAuth2ClientManager:
         jsondata = json.dumps(self.saved_session, sort_keys=True, indent=4)
         del self.saved_session['data']
         del self.saved_session['cryptoparams']
-        self._write_and_rename(jsondata, path)
+        with atomic_write(path, overwrite=overwrite) as session_file:
+            os.fchmod(session_file.fileno(), 0o600)
+            print(jsondata, file=session_file)
 
     def _start_server(self) -> None:
         if self._server_thread:
@@ -501,7 +505,9 @@ class OAuth2ClientManager:
     def write_access_token(self, filename: str) -> None:
         if not self.token or not 'access_token' in self.token:
             raise NoTokenError("No access token available.")
-        self._write_and_rename(self.token['access_token'], filename)
+        with atomic_write(filename, overwrite=True) as access_file:
+            os.fchmod(access_file.fileno(), 0o600)
+            print(self.token['access_token'], file=access_file)
 
     def _file_writer(self, filename: str) -> None:
         if not self.token or not 'access_token' in self.token:
@@ -521,20 +527,10 @@ class OAuth2ClientManager:
 
             if needs_write:
                 self._log(f"Writing out new access token to {filename}")
-                self._write_and_rename(my_token, filename)
+                self.write_access_token(filename)
             if self._file_thread_exit.is_set():
                 self._debug("_file_writer: Exiting")
                 break
-
-    @staticmethod
-    def _write_and_rename(data: Union[bytes, str], filename: str) -> None:
-        with open(filename + ".new", 'wb') as tmpfile:
-            if not isinstance(data, bytes):
-                data = bytes(data, 'utf-8')
-            os.chmod(filename + ".new", 0o600)
-            tmpfile.write(data)
-            tmpfile.close()
-        os.rename(filename + ".new", filename)
 
     def start_file_writer(self, filename: str) -> None:
         self._file_thread = threading.Thread(target=self._file_writer, args=((filename),))
