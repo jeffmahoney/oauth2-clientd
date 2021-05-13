@@ -214,12 +214,16 @@ def main() -> None:
     if not args.file and not args.socket:
         columns = shutil.get_terminal_size((80, 25))[0]
         if not args.quiet:
-            print("No file or socket was specified.  Exiting.")
-            print("Current access token follows:")
-            print(columns * '-')
-        print(oaclient.token['access_token'])
-        if not args.quiet:
-            print(columns * '-')
+            print("No file or socket was specified.  Exiting.", file=sys.stderr)
+        if oaclient.token and 'access_token' in oaclient.token:
+            if not args.quiet:
+                print("Current access token follows:", file=sys.stderr)
+                print(columns * '-', file=sys.stderr)
+            print(oaclient.token['access_token'])
+            if not args.quiet:
+                print(columns * '-', file=sys.stderr)
+        else:
+            print("No valid access token found.", file=sys.stderr)
         sys.exit(0)
 
     logfile: Optional[TextIO] = None
