@@ -493,8 +493,6 @@ class OAuth2ClientManager:
             self.token = new_token
             self.token_changed.notify()
 
-        self.save_session()
-
     def get_access_token(self) -> str:
         if not self.token or not 'access_token' in self.token:
             raise NoTokenError("No access token available")

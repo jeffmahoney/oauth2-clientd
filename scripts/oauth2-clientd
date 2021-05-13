@@ -13,6 +13,8 @@ import contextlib
 from typing import Any, Dict, Optional, Sequence, TextIO
 
 import daemon # type: ignore
+import daemon.pidfile # type: ignore
+from lockfile import AlreadyLocked # type: ignore
 from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 
 from oauth2_clientmanager import OAuth2ClientManager
@@ -89,6 +91,9 @@ def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str], filename: 
 
     if not oaclient.token:
         raise NoTokenError("No token to monitor")
+
+    oaclient.save_session()
+
     if sockname:
         oaclient.start_socket_listener(sockname)
 
@@ -101,6 +106,7 @@ def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str], filename: 
             if debug or not sys.stderr.isatty():
                 print("Wait for refresh complete", file=sys.stderr, flush=True)
             oaclient.refresh_token()
+            oaclient.save_session()
 
             if debug and not filename and not sockname:
                 print("\nBEGIN ACCESS TOKEN")
@@ -125,6 +131,8 @@ def parse_arguments():
                         help='detach and daemonize after user interaction is complete, logging to file')
     parser.add_argument('-f', '--file', type=str, default=None,
                         help='write access token to <file> (periodically, prior to expiration, if in daemon mode)')
+    parser.add_argument('-i', '--pidfile', type=str, default=None, dest='pidfile',
+                        help='write daemon pid to <pidfile>')
     parser.add_argument('-s', '--socket', type=str, default=None,
                         help='create a UNIX socket at <socket> with an http listener to provide access token on request')
     parser.add_argument('-P', '--provider', type=str, default=DEFAULT_PROVIDER,
@@ -140,6 +148,20 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
+
+    if args.pidfile:
+        pidfile_path = os.path.realpath(args.pidfile)
+        oa2cd_pidfile = daemon.pidfile.TimeoutPIDLockFile(pidfile_path)
+        # If we know the pidfile is there, we can skip asking the user
+        # for the password and exit early.  This is racy and for convenience
+        # only.  It's checked properly before we start the main loop.
+        if oa2cd_pidfile.is_locked():
+            pid = oa2cd_pidfile.read_pid()
+            print(f"PID file {pidfile_path} is already locked by PID {pid}.  Exiting.",
+                  file=sys.stderr)
+            sys.exit(1)
+    else:
+        oa2cd_pidfile = contextlib.nullcontext()
 
     try:
         if args.clientid:
@@ -210,19 +232,30 @@ def main():
             sys.exit(1)
 
         context = daemon.DaemonContext(files_preserve=[logfile],
-                                       working_directory=os.getcwd())
+                                       working_directory=os.getcwd(),
+                                       pidfile=oa2cd_pidfile,
+                                       stdout=sys.stdout,
+                                       stderr=sys.stderr)
         context.signal_map = {
             signal.SIGTERM: SignalHandler,
             signal.SIGHUP: 'terminate',
         }
+    elif oa2cd_pidfile:
+        context = oa2cd_pidfile
     else:
         context = contextlib.nullcontext()
 
-    with context:
-        if logfile:
-            sys.stderr = logfile
-            sys.stdout = logfile
-        main_loop(oaclient, args.socket, args.file)
+    try:
+        with context:
+            if logfile:
+                sys.stderr.close()
+                sys.stdout.close()
+                sys.stderr = logfile
+                sys.stdout = logfile
+            main_loop(oaclient, args.socket, args.file)
+    except AlreadyLocked as ex:
+        print(f"{ex} by PID {oa2cd_pidfile.read_pid()}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()
