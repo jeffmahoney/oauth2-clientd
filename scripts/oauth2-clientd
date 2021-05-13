@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional, Sequence, TextIO
 import daemon # type: ignore
 import daemon.pidfile # type: ignore
 from lockfile import AlreadyLocked # type: ignore
-from oauthlib.oauth2.rfc6749.errors import OAuth2Error
+from oauthlib.oauth2.rfc6749.errors import OAuth2Error # type: ignore
 
 from oauth2_clientmanager import OAuth2ClientManager
 from oauth2_clientmanager import NoTokenError, NoPrivateKeyError
@@ -117,7 +117,7 @@ def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str], filename: 
     except KeyboardInterrupt:
         shutdown_listeners_and_exit(oaclient)
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='increase verbosity')
@@ -146,7 +146,7 @@ def parse_arguments():
         args.verbose = True
     return args
 
-def main():
+def main() -> None:
     args = parse_arguments()
 
     if args.pidfile:

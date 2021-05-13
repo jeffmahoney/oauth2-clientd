@@ -117,7 +117,7 @@ class _TokenSocketHandler(http.server.BaseHTTPRequestHandler):
 class _ThreadingHTTPServerWithContext(ThreadingHTTPServer):
     def __init__(self, address: Tuple[str, int],
                  handler: Type[http.server.BaseHTTPRequestHandler],
-                 context: 'OAuth2ClientManager'):
+                 context: 'OAuth2ClientManager') -> None:
         super().__init__(address, handler)
         self.context = context
 
@@ -208,7 +208,7 @@ class OAuth2ClientManager:
 
     @classmethod
     def from_saved_session(cls, path: str, debug: bool = False,
-                           verbose: bool = False) -> "OAuth2ClientManager":
+                           verbose: bool = False) -> 'OAuth2ClientManager':
         with open(path, 'rb') as session_file:
             saved_session = json.loads(session_file.read())
 
@@ -315,7 +315,7 @@ class OAuth2ClientManager:
 
         return encrypted_data, params
 
-    def save_session(self, path: Optional[str] = None, overwrite: bool = True):
+    def save_session(self, path: Optional[str] = None, overwrite: bool = True) -> None:
         if path is None and self.session_file_path:
             path = self.session_file_path
         elif self.session_file_path is None and path:
@@ -436,7 +436,7 @@ class OAuth2ClientManager:
 
     @classmethod
     def from_new_authorization(cls, registration: Dict[str, Sequence[str]], client: Dict[str, str], port: int = 0,
-                               debug: bool = False, verbose: bool = False):
+                               debug: bool = False, verbose: bool = False) -> 'OAuth2ClientManager':
         obj = cls(registration, client, debug=debug, verbose=verbose)
         obj._init_saved_session()
         obj._new_authorization(port)
