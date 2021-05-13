@@ -141,7 +141,6 @@ class OAuth2ClientManager:
                  verbose: bool = False) -> None:
         self._registration = registration
         self.client = client
-        self.refresh_timeout_thresh = 300
         self.session_file_path: Optional[str] = None
         self.public_key: Optional[rsa.RSAPublicKey] = None
         self.saved_session: Dict[str, Any] = {}
