@@ -10,7 +10,7 @@ from setuptools import setup
 
 setup(
     name="oauth2-clientd",
-    version="0.2",
+    version="0.3",
     python_requires='>=3.6',
 
     author="Jeff Mahoney",
