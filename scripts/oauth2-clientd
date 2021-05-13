@@ -8,8 +8,9 @@ import time
 import signal
 import shutil
 import getpass
+import contextlib
 
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, TextIO
 
 import daemon # type: ignore
 from oauthlib.oauth2.rfc6749.errors import OAuth2Error
@@ -199,20 +200,28 @@ def main():
             print(columns * '-')
         sys.exit(0)
 
+    logfile: Optional[TextIO] = None
     if args.logfile:
-        with open(args.logfile, 'w+') as logfile:
-            context = daemon.DaemonContext(files_preserve=[logfile],
-                                           working_directory=os.getcwd())
-            context.signal_map = {
-                signal.SIGTERM: SignalHandler,
-                signal.SIGHUP: 'terminate',
-            }
+        try:
+            logfile = open(args.logfile, 'w+') # pylint: disable=consider-using-with
+        except (OSError, IOError) as ex:
+            print(f"Failed to open logfile {logfile}: {ex.args[1]}.  Exiting.",
+                  file=sys.stderr)
+            sys.exit(1)
 
-            with context:
-                sys.stdout = logfile
-                sys.stderr = logfile
-                main_loop(oaclient, args.socket, args.file)
+        context = daemon.DaemonContext(files_preserve=[logfile],
+                                       working_directory=os.getcwd())
+        context.signal_map = {
+            signal.SIGTERM: SignalHandler,
+            signal.SIGHUP: 'terminate',
+        }
     else:
+        context = contextlib.nullcontext()
+
+    with context:
+        if logfile:
+            sys.stderr = logfile
+            sys.stdout = logfile
         main_loop(oaclient, args.socket, args.file)
 
 if __name__ == '__main__':
