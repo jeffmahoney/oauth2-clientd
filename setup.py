@@ -16,6 +16,7 @@ setup(
     author="Jeff Mahoney",
     author_email="jeffm@suse.com",
     description = "OAUTH2 client that caches refresh tokens securely",
-    install_requires=['requests-oauthlib', 'python-daemon', 'cryptography'],
+    install_requires=['requests-oauthlib', 'python-daemon', 'cryptography',
+                      'atomicwrites'],
     packages = [ "oauth2_clientmanager" ],
     scripts=["scripts/oauth2-clientd"])
