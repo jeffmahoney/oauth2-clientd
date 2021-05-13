@@ -199,17 +199,10 @@ def main():
             print(columns * '-')
         sys.exit(0)
 
-    filename: Optional[str] = None
-    if args.file:
-        filename = os.path.realpath(args.file)
-
-    sockname: Optional[str] = None
-    if args.socket:
-        sockname = os.path.realpath(args.socket)
-
     if args.logfile:
         with open(args.logfile, 'w+') as logfile:
-            context = daemon.DaemonContext(files_preserve=[logfile])
+            context = daemon.DaemonContext(files_preserve=[logfile],
+                                           working_directory=os.getcwd())
             context.signal_map = {
                 signal.SIGTERM: SignalHandler,
                 signal.SIGHUP: 'terminate',
@@ -218,9 +211,9 @@ def main():
             with context:
                 sys.stdout = logfile
                 sys.stderr = logfile
-                main_loop(oaclient, sockname, filename)
+                main_loop(oaclient, args.socket, args.file)
     else:
-        main_loop(oaclient, sockname, filename)
+        main_loop(oaclient, args.socket, args.file)
 
 if __name__ == '__main__':
     main()
