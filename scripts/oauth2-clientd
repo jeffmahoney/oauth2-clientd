@@ -52,7 +52,6 @@ registrations: Dict[str, Dict[str, Sequence[str]]] = {
         'token_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
         #'redirect_uri': 'https://login.microsoftonline.com/common/oauth2/nativeclient',
         'redirect_uri' : 'http://localhost',
-        'tenant' : 'mysuse.onmicrosoft.com',
         'imap_endpoint': 'outlook.office365.com',
         'pop_endpoint': 'outlook.office365.com',
         'smtp_endpoint': 'smtp.office365.com',
@@ -61,8 +60,14 @@ registrations: Dict[str, Dict[str, Sequence[str]]] = {
                   'https://outlook.office.com/POP.AccessAsUser.All',
                   'https://outlook.office.com/SMTP.Send'),
     },
+    'suse-o365': {
+        'inherits' : 'microsoft',
+        'client_id' : '3ce62cca-417a-462c-bbe5-03d1888daf53',
+        'tenant' : 'mysuse.onmicrosoft.com',
+        'client_secret' : ''
+    }
 }
-DEFAULT_PROVIDER = 'microsoft'
+DEFAULT_PROVIDER = 'suse-o365'
 
 def shutdown_listeners_and_exit(oaclient: OAuth2ClientManager) -> None:
     print("Shutting down", file=sys.stderr, flush=True)
@@ -158,6 +163,21 @@ def parse_arguments() -> argparse.Namespace:
         args.verbose = True
     return args
 
+def resolve_registration(provider, loops=None):
+    reg = registrations[provider]
+    if 'inherits' in reg:
+        if loops is None:
+            loops = [provider]
+        elif provider in loops:
+            raise ValueError(f"Provider '{provider}' is already in the dependency chain")
+        else:
+            loops.append(provider)
+        inherited = resolve_registration(reg['inherits'], loops)
+        reg = { **inherited, **reg }
+
+    return reg
+
+
 def main() -> None:
     args = parse_arguments()
 
@@ -177,28 +197,37 @@ def main() -> None:
 
     try:
         if args.authorize:
-            if not args.clientid:
-                print(f"Must specify client id with --clientid.  Exiting.", file=sys.stderr)
+            registration = resolve_registration(args.provider)
+            if args.clientid:
+                clientid = args.clientid
+            elif 'client_id' in registration:
+                clientid = registration['client_id']
+            else:
+                print(f"Provider {args.provider} has no default client id set.\nPlease provide one with --clientid.  Exiting.", file=sys.stderr)
                 sys.exit(1)
 
             client_data = {
-                'client_id' : args.clientid,
+                'client_id' : clientid,
             }
 
             if os.path.exists(args.sessionfile) and not args.force:
                 print(f"{args.sessionfile} already exists.  Exiting.", file=sys.stderr)
                 sys.exit(1)
 
-            try:
-                secret = getpass.getpass(f"Secret for clientid {args.clientid} (leave empty if there is no secret): ")
-            except (EOFError, KeyboardInterrupt):
-                print("\nFailed to obtain client secret.  Exiting.", file=sys.stderr)
-                sys.exit(1)
+            # A missing client_secret will cause a password prompt.
+            # If the client_secret key is present, even with an empty
+            # string or None, we'll use that.
+            if 'client_secret' in registration and not args.clientid:
+                client_data['client_secret'] = registration['client_secret']
+            else:
+                try:
+                    secret = getpass.getpass(f"Secret for clientid {clientid} (leave empty if there is no secret): ")
+                    if secret:
+                        client_data['client_secret'] = secret
+                except (EOFError, KeyboardInterrupt):
+                    print("\nFailed to obtain client secret.  Exiting.", file=sys.stderr)
+                    sys.exit(1)
 
-            if secret:
-                client_data['client_secret'] = secret
-
-            registration = registrations[args.provider]
             if 'tenant' in registration:
                 client_data['tenant'] = registration['tenant']
             try:
