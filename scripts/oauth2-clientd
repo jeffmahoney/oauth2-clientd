@@ -131,8 +131,10 @@ def parse_arguments() -> argparse.Namespace:
                         help='increase verbosity')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='enable debug output')
-    parser.add_argument('-a', '--authorize', type=str, dest='clientid',
-                        help='generate a new refresh token on startup if required with clientid')
+    parser.add_argument('-a', '--authorize', action='store_true',
+                        help='generate a new refresh token on startup using the default clientid and secret for the provider')
+    parser.add_argument('-c', '--clientid', type=str, default=None,
+                        help='specify client id to use for authorization if different than the default (or if there is no default).')
     parser.add_argument('-p', '--port', type=int, default=-1,
                         help='specify port for http server (useful for tunneling to remote host)')
     parser.add_argument('-D', '--daemonize', type=str, dest='logfile',
@@ -174,7 +176,11 @@ def main() -> None:
         oa2cd_pidfile = nullcontext()
 
     try:
-        if args.clientid:
+        if args.authorize:
+            if not args.clientid:
+                print(f"Must specify client id with --clientid.  Exiting.", file=sys.stderr)
+                sys.exit(1)
+
             client_data = {
                 'client_id' : args.clientid,
             }
