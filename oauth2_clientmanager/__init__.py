@@ -339,7 +339,6 @@ class OAuth2ClientManager:
         del self.saved_session['data']
         del self.saved_session['cryptoparams']
         with atomic_write(path, overwrite=overwrite) as session_file:
-            os.fchmod(session_file.fileno(), 0o600)
             print(jsondata, file=session_file)
 
     def _start_server(self) -> None:
@@ -503,7 +502,6 @@ class OAuth2ClientManager:
         if not self.token or not 'access_token' in self.token:
             raise NoTokenError("No access token available.")
         with atomic_write(filename, overwrite=True) as access_file:
-            os.fchmod(access_file.fileno(), 0o600)
             print(self.token['access_token'], file=access_file)
 
     def _file_writer(self, filename: str) -> None:
