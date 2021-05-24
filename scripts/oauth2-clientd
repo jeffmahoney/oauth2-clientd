@@ -177,6 +177,8 @@ def resolve_registration(provider, loops=None):
 
     return reg
 
+class FatalError(RuntimeError):
+    pass
 
 def main() -> None:
     args = parse_arguments()
@@ -189,9 +191,7 @@ def main() -> None:
         # only.  It's checked properly before we start the main loop.
         if oa2cd_pidfile.is_locked():
             pid = oa2cd_pidfile.read_pid()
-            print(f"PID file {pidfile_path} is already locked by PID {pid}.  Exiting.",
-                  file=sys.stderr)
-            sys.exit(1)
+            raise FatalError(f"PID file {pidfile_path} is already locked by PID {pid}.")
     else:
         oa2cd_pidfile = nullcontext()
 
@@ -203,16 +203,14 @@ def main() -> None:
             elif 'client_id' in registration:
                 clientid = registration['client_id']
             else:
-                print(f"Provider {args.provider} has no default client id set.\nPlease provide one with --clientid.  Exiting.", file=sys.stderr)
-                sys.exit(1)
+                raise FatalError(f"Provider {args.provider} has no default client id set.\nPlease provide one with --clientid.")
 
             client_data = {
                 'client_id' : clientid,
             }
 
             if os.path.exists(args.sessionfile) and not args.force:
-                print(f"{args.sessionfile} already exists.  Exiting.", file=sys.stderr)
-                sys.exit(1)
+                raise FatalError(f"{args.sessionfile} already exists.")
 
             # A missing client_secret will cause a password prompt.
             # If the client_secret key is present, even with an empty
@@ -225,8 +223,7 @@ def main() -> None:
                     if secret:
                         client_data['client_secret'] = secret
                 except (EOFError, KeyboardInterrupt):
-                    print("\nFailed to obtain client secret.  Exiting.", file=sys.stderr)
-                    sys.exit(1)
+                    raise FatalError("\nFailed to obtain client secret.")
 
             if 'tenant' in registration:
                 client_data['tenant'] = registration['tenant']
@@ -235,8 +232,7 @@ def main() -> None:
                                                                args.port, debug=args.debug,
                                                                verbose=args.verbose)
             except OAuth2Error as ex:
-                print(f"Failed to obtain authorization: {str(ex)}.  Exiting.",
-                      file=sys.stderr)
+                print(f"Failed to obtain authorization: {str(ex)}.", file=sys.stderr)
                 if args.debug:
                     raise ex from ex
                 sys.exit(1)
@@ -250,16 +246,14 @@ def main() -> None:
                 if token_needs_refreshing(oaclient.token, args.threshold):
                     oaclient.refresh_token()
             except (FileNotFoundError, PermissionError) as ex:
-                print(f"Couldn't open session file: {str(ex)}", file=sys.stderr)
-                sys.exit(1)
+                raise FatalError(f"Couldn't open session file: {str(ex)}") from ex
     except NoPrivateKeyError as ex:
-        print(f"\n{str(ex)} Exiting.", file=sys.stderr)
-        sys.exit(1)
+        raise FatalError(f"\n{str(ex)}") from ex
 
     if not args.file and not args.socket:
         columns = shutil.get_terminal_size((80, 25))[0]
         if not args.quiet:
-            print("No file or socket was specified.  Exiting.", file=sys.stderr)
+            raise FatalError("No file or socket was specified")
         if oaclient.token and 'access_token' in oaclient.token:
             if not args.quiet:
                 print("Current access token follows:", file=sys.stderr)
@@ -276,9 +270,7 @@ def main() -> None:
         try:
             logfile = open(args.logfile, 'w+') # pylint: disable=consider-using-with
         except (OSError, IOError) as ex:
-            print(f"Failed to open logfile {logfile}: {ex.args[1]}.  Exiting.",
-                  file=sys.stderr)
-            sys.exit(1)
+            raise FatalError(f"Failed to open logfile {logfile}: {ex.args[1]}.") from ex
 
         context = daemon.DaemonContext(files_preserve=[logfile],
                                        working_directory=os.getcwd(),
@@ -301,8 +293,12 @@ def main() -> None:
                 sys.stdout = logfile
             main_loop(oaclient, args.socket, args.file, args.debug, args.threshold)
     except AlreadyLocked as ex:
-        print(f"{ex} by PID {oa2cd_pidfile.read_pid()}")
-        sys.exit(1)
+        raise FatalError(f"{ex} by PID {oa2cd_pidfile.read_pid()}") from ex
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except FatalError as ex:
+        print(str(ex) + "  Exiting.", file=sys.stderr)
+        sys.exit(1)
+
