@@ -351,13 +351,7 @@ class OAuth2ClientManager:
         self._server_thread = threading.Thread(target=self._server.serve_forever)
         self._server_thread.start()
 
-    def _setup_redirect_listener(self, port) -> None:
-        if port == -1:
-            sock = socket.socket()
-            sock.bind(('127.0.0.1', 0))
-            port = sock.getsockname()[1]
-            sock.close()
-
+    def _setup_redirect_listener(self, port: int = 0) -> None:
         self._server = _ThreadingHTTPServerWithContext(('127.0.0.1', port), _RedirectURIHandler, self)
 
     def _get_redirect_listener_port(self) -> int:
@@ -441,7 +435,7 @@ class OAuth2ClientManager:
 
         return obj
 
-    def _new_authorization(self, port: int = -1) -> None:
+    def _new_authorization(self, port: int = 0) -> None:
         redirect_uri = self._registration['redirect_uri']
         if 'http://localhost' in redirect_uri:
             self._setup_redirect_listener(port)
