@@ -105,6 +105,9 @@ def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str], filename: 
     if not oaclient.token:
         raise NoTokenError("No token to monitor")
 
+    if token_needs_refreshing(oaclient.token, threshold):
+        oaclient.refresh_token()
+
     oaclient.save_session()
 
     if sockname:
@@ -239,12 +242,13 @@ def main() -> None:
             oaclient.save_session(args.sessionfile, overwrite=args.force)
         else:
             try:
+                # NB: If we make a request before daemonizing, we'll have to
+                # re-establish the session afterwards as the sockets backing
+                # the connection pool will have been closed.
                 oaclient = OAuth2ClientManager.from_saved_session(args.sessionfile,
                                                            debug=args.debug, verbose=args.verbose)
                 if not oaclient.token:
                     raise NoTokenError("Session didn't contain valid session.")
-                if token_needs_refreshing(oaclient.token, args.threshold):
-                    oaclient.refresh_token()
             except (FileNotFoundError, PermissionError) as ex:
                 raise FatalError(f"Couldn't open session file: {str(ex)}") from ex
     except NoPrivateKeyError as ex:
@@ -254,6 +258,10 @@ def main() -> None:
         columns = shutil.get_terminal_size((80, 25))[0]
         if not args.quiet:
             raise FatalError("No file or socket was specified")
+
+        if token_needs_refreshing(oaclient.token, args.threshold):
+            oaclient.refresh_token()
+
         if oaclient.token and 'access_token' in oaclient.token:
             if not args.quiet:
                 print("Current access token follows:", file=sys.stderr)
