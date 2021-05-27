@@ -428,7 +428,7 @@ class OAuth2ClientManager:
                     except KeyboardInterrupt:
                         break
                 elif self.authurl:
-                    print("<canceled>\nResponse provided by browser session.")
+                    print("(not necessary any longer)\nResponse provided by browser session.\n")
                 if self.authurl:
                     break
 
