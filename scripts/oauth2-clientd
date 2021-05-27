@@ -9,6 +9,7 @@ import signal
 import shutil
 import getpass
 import contextlib
+import logging
 
 from typing import Any, Dict, Optional, Sequence, TextIO
 
@@ -19,6 +20,10 @@ from oauthlib.oauth2.rfc6749.errors import OAuth2Error # type: ignore
 
 from oauth2_clientmanager import OAuth2ClientManager
 from oauth2_clientmanager import NoTokenError, NoPrivateKeyError
+
+log = logging.getLogger(__name__)
+DATE_FORMAT='%Y-%m-%d %H:%M:%S'
+LOG_FORMAT = "%(asctime)s.%(msecs)03d %(threadName)s[%(process)d] %(levelname)s %(message)s"
 
 try:
     from contextlib import nullcontext
@@ -70,7 +75,7 @@ registrations: Dict[str, Dict[str, Sequence[str]]] = {
 DEFAULT_PROVIDER = 'suse-o365'
 
 def shutdown_listeners_and_exit(oaclient: OAuth2ClientManager) -> None:
-    print("Shutting down", file=sys.stderr, flush=True)
+    log.warning("Shutting down")
     oaclient.stop_file_writer()
     oaclient.stop_socket_listener()
     sys.exit(0)
@@ -92,15 +97,13 @@ def wait_for_refresh_timeout(oaclient: OAuth2ClientManager, thresh: int) -> None
     timeout = oaclient.access_token_expiry - thresh - time.time()
 
     if timeout > 0:
-        if oaclient.verbose:
-            print(f"Waiting {int(timeout)}s to refresh token.", file=sys.stderr)
+        log.info(f"Waiting {int(timeout)}s to refresh token.")
         time.sleep(timeout)
     else:
-        if oaclient.debug:
-            print("Token has expired.", file=sys.stderr)
+        log.info("Token has expired.")
 
-def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str], filename: Optional[str],
-              debug: bool = False, threshold: int = 300) -> None:
+def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str],
+              filename: Optional[str], threshold: int = 300) -> None:
 
     if not oaclient.token:
         raise NoTokenError("No token to monitor")
@@ -119,12 +122,11 @@ def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str], filename: 
     try:
         while True:
             wait_for_refresh_timeout(oaclient, threshold)
-            if debug or not sys.stderr.isatty():
-                print("Wait for refresh complete", file=sys.stderr, flush=True)
+            log.debug("Wait for refresh complete")
             oaclient.refresh_token()
             oaclient.save_session()
 
-            if debug and not filename and not sockname:
+            if log.level >= logging.DEBUG and not filename and not sockname:
                 print("\nBEGIN ACCESS TOKEN")
                 if oaclient.token and 'access_token' in oaclient.token:
                     print(oaclient.token['access_token'])
@@ -162,8 +164,6 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--force', action='store_true', help='overwrite sessionfile if it exists')
     parser.add_argument('sessionfile', help='path to store encrypted session and refresh token')
     args = parser.parse_args()
-    if args.debug:
-        args.verbose = True
     return args
 
 def resolve_registration(provider, loops=None):
@@ -185,6 +185,14 @@ class FatalError(RuntimeError):
 
 def main() -> None:
     args = parse_arguments()
+
+    loglevel = logging.WARNING
+    if args.debug:
+        logevel = logging.DEBUG
+    elif args.verbose:
+        loglevel = logging.INFO
+
+    logging.basicConfig(stream=sys.stderr, level=loglevel)
 
     if args.pidfile:
         pidfile_path = os.path.realpath(args.pidfile)
@@ -232,10 +240,9 @@ def main() -> None:
                 client_data['tenant'] = registration['tenant']
             try:
                 oaclient = OAuth2ClientManager.from_new_authorization(registration, client_data,
-                                                               args.port, debug=args.debug,
-                                                               verbose=args.verbose)
+                                                               args.port)
             except OAuth2Error as ex:
-                print(f"Failed to obtain authorization: {str(ex)}.", file=sys.stderr)
+                log.error(f"Failed to obtain authorization: {str(ex)}.")
                 if args.debug:
                     raise ex from ex
                 sys.exit(1)
@@ -245,8 +252,7 @@ def main() -> None:
                 # NB: If we make a request before daemonizing, we'll have to
                 # re-establish the session afterwards as the sockets backing
                 # the connection pool will have been closed.
-                oaclient = OAuth2ClientManager.from_saved_session(args.sessionfile,
-                                                           debug=args.debug, verbose=args.verbose)
+                oaclient = OAuth2ClientManager.from_saved_session(args.sessionfile)
                 if not oaclient.token:
                     raise NoTokenError("Session didn't contain valid session.")
             except (FileNotFoundError, PermissionError) as ex:
@@ -270,12 +276,14 @@ def main() -> None:
             if not args.quiet:
                 print(columns * '-', file=sys.stderr)
         else:
-            print("No valid access token found.", file=sys.stderr)
+            log.error("No valid access token found.")
         sys.exit(0)
 
     logfile: Optional[TextIO] = None
     if args.logfile:
         try:
+            # We open it here just to get an error for the user before
+            # we daemonize.
             logfile = open(args.logfile, 'w+') # pylint: disable=consider-using-with
         except (OSError, IOError) as ex:
             raise FatalError(f"Failed to open logfile {logfile}: {ex.args[1]}.") from ex
@@ -299,7 +307,13 @@ def main() -> None:
                 sys.stdout.close()
                 sys.stderr = logfile
                 sys.stdout = logfile
-            main_loop(oaclient, args.socket, args.file, args.debug, args.threshold)
+
+            # Now that we're starting up for real, some timestamps and other
+            # information may be useful for logging.
+            logging.basicConfig(stream=sys.stderr, level=log.level,
+                                datefmt=DATE_FORMAT, format=LOG_FORMAT,
+                                force=True)
+            main_loop(oaclient, args.socket, args.file, args.threshold)
     except AlreadyLocked as ex:
         raise FatalError(f"{ex} by PID {oa2cd_pidfile.read_pid()}") from ex
 

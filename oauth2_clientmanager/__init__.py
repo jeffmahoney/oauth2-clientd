@@ -18,6 +18,7 @@ import getpass
 import shutil
 import signal
 import stat
+import logging
 
 from typing import cast, Any, Dict, Optional, Sequence, Tuple, Type, Union
 
@@ -31,6 +32,8 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 import daemon # type: ignore
 from requests_oauthlib import OAuth2Session # type: ignore
+
+log = logging.getLogger(__name__)
 
 class NoTokenError(RuntimeError):
     """The token is not available"""
@@ -50,7 +53,7 @@ class _RedirectURIHandler(http.server.BaseHTTPRequestHandler):
     def log_request(self, code: Union[int, str] = '-',
                     size: Union[int, str] = '-') -> None:
         server = cast(_ThreadingHTTPServerWithContext, self.server)
-        if server.context.debug:
+        if log.level >= logging.DEBUG:
             super().log_request(code, size)
 
     def do_HEAD(self) -> None:
@@ -93,7 +96,7 @@ class _TokenSocketHandler(http.server.BaseHTTPRequestHandler):
     def log_request(self, code: Union[int, str] = '-',
                     size: Union[int, str] = '-') -> None:
         server = cast(_ThreadingHTTPServerWithContext, self.server)
-        if server.context.verbose or server.context.debug:
+        if log.level >= logging.INFO:
             super().log_request(code, size)
 
     # pylint: disable=invalid-name
@@ -137,8 +140,7 @@ class _UnixSocketThreadingHTTPServer(_ThreadingHTTPServerWithContext):
 
 class OAuth2ClientManager:
     def __init__(self, registration: Dict[str, Sequence[str]],
-                 client: Dict[str, str], debug: bool = False,
-                 verbose: bool = False) -> None:
+                 client: Dict[str, str]) -> None:
         self._registration = registration
         self.client = client
         self.session_file_path: Optional[str] = None
@@ -158,9 +160,6 @@ class OAuth2ClientManager:
 
         self._file_thread: Optional[threading.Thread] = None
         self._file_thread_exit = threading.Event()
-
-        self.debug: bool = debug
-        self.verbose: bool = verbose
 
     @property
     def access_token_expiry(self) -> float:
@@ -206,8 +205,7 @@ class OAuth2ClientManager:
         }
 
     @classmethod
-    def from_saved_session(cls, path: str, debug: bool = False,
-                           verbose: bool = False) -> 'OAuth2ClientManager':
+    def from_saved_session(cls, path: str) -> 'OAuth2ClientManager':
         with open(path, 'rb') as session_file:
             saved_session = json.loads(session_file.read())
 
@@ -243,7 +241,7 @@ class OAuth2ClientManager:
         data = decryptor.update(cls._b64decode(saved_session['data'])) + decryptor.finalize()
         session = json.loads(cls._b64decode(data))
 
-        obj = cls(session['registration'], session['client'], debug, verbose)
+        obj = cls(session['registration'], session['client'])
         obj.session_file_path = path
         obj.saved_session = saved_session
         obj.public_key = serialization.load_pem_public_key(public_key_pem_bytes,
@@ -348,7 +346,7 @@ class OAuth2ClientManager:
             raise RuntimeError("HTTP server not set up yet.")
 
         self._server.context = self
-        self._server_thread = threading.Thread(target=self._server.serve_forever)
+        self._server_thread = threading.Thread(target=self._server.serve_forever, name='SocketThread')
         self._server_thread.start()
 
     def _setup_redirect_listener(self, port: int = 0) -> None:
@@ -361,15 +359,15 @@ class OAuth2ClientManager:
 
     def _stop_server(self) -> None:
         if self._server:
-            self._debug("Telling HTTP server to shutdown")
+            log.debug("Telling HTTP server to shutdown")
             self._server.shutdown()
             self._server = None
 
         if self._server_thread:
-            self._debug("Waiting for HTTP server to shutdown")
+            log.debug("Waiting for HTTP server to shutdown")
             self._server_thread.join()
             self._server_thread = None
-            self._debug("HTTP server has shutdown")
+            log.debug("HTTP server has shutdown")
 
     @staticmethod
     def _generate_pkce_context() -> Tuple[str, Dict[str, str]]:
@@ -427,9 +425,8 @@ class OAuth2ClientManager:
 
 
     @classmethod
-    def from_new_authorization(cls, registration: Dict[str, Sequence[str]], client: Dict[str, str], port: int = 0,
-                               debug: bool = False, verbose: bool = False) -> 'OAuth2ClientManager':
-        obj = cls(registration, client, debug=debug, verbose=verbose)
+    def from_new_authorization(cls, registration: Dict[str, Sequence[str]], client: Dict[str, str], port: int = 0) -> 'OAuth2ClientManager':
+        obj = cls(registration, client)
         obj._init_saved_session()
         obj._new_authorization(port)
 
@@ -477,9 +474,9 @@ class OAuth2ClientManager:
                                               **self.client, code_verifier=verifier)
 
     def refresh_token(self) -> None:
-        self._log("Starting token refresh")
+        log.info("Starting token refresh")
         new_token = self.session.refresh_token(self._registration['token_endpoint'], **self.client)
-        self._log("Token refreshed")
+        log.info("Token refreshed")
 
         with self.token_changed:
             self.token = new_token
@@ -515,39 +512,31 @@ class OAuth2ClientManager:
                 raise NoTokenError("Access token changed but is unavailable.")
 
             if needs_write:
-                self._log(f"Writing out new access token to {filename}")
+                log.info(f"Writing out new access token to {filename}")
                 self.write_access_token(filename)
             if self._file_thread_exit.is_set():
-                self._debug("_file_writer: Exiting")
+                log.debug("_file_writer: Exiting")
                 break
 
     def start_file_writer(self, filename: str) -> None:
-        self._file_thread = threading.Thread(target=self._file_writer, args=((filename),))
+        self._file_thread = threading.Thread(target=self._file_writer, args=((filename),), name='FileWriterThread')
         self._file_thread.start()
-
-    def _log(self, message: str) -> None:
-        if (self.verbose or self.debug) or not sys.stderr.isatty():
-            print(message, file=sys.stderr, flush=True)
-
-    def _debug(self, message: str) -> None:
-        if self.debug or not sys.stderr.isatty():
-            print(message, file=sys.stderr, flush=True)
 
     def stop_file_writer(self) -> None:
         if self._file_thread:
-            self._debug("Telling file thread to exit")
+            log.debug("Telling file thread to exit")
             self._file_thread_exit.set()
             with self.token_changed:
                 self.token_changed.notify()
-            self._debug("Waiting for file thread to exit")
+            log.debug("Waiting for file thread to exit")
             self._file_thread.join()
-            self._debug("File thread has exited")
+            log.debug("File thread has exited")
 
     def start_socket_listener(self, filename: str) -> None:
         if self._server or self._server_thread:
             raise RuntimeError("Server already running")
 
-        self._debug(f"Starting HTTP listener on {filename}")
+        log.debug(f"Starting HTTP listener on {filename}")
 
         if os.path.exists(filename):
             sock_stat = os.stat(filename)
