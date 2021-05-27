@@ -3,12 +3,14 @@
 import os
 import os.path
 import argparse
+import stat
 import sys
 import time
 import signal
 import shutil
 import getpass
 import contextlib
+import subprocess
 import logging
 
 from typing import Any, Dict, Optional, Sequence, TextIO
@@ -102,8 +104,22 @@ def wait_for_refresh_timeout(oaclient: OAuth2ClientManager, thresh: int) -> None
     else:
         log.info("Token has expired.")
 
+def run_update_hook(update_hook: str, access_token: str) -> None:
+    try:
+        log.info(f"Running update hook {update_hook} for new access token.")
+        cmd = subprocess.run([update_hook], input=access_token, text=True, timeout=5)
+    except subprocess.TimeoutExpired as ex:
+        log.warning(f"Update hook {update_hook} timed out after {ex.timeout}s.")
+    except subprocess.CalledProcessError as ex:
+        ret = ex.returncode
+        if ret > 0:
+            log.warning(f"Update hook {update_hook} failed.  Exited with status={ret}.")
+        else:
+            log.warning(f"Update hook {update_hook} terminated by signal {-ret}.")
+
 def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str],
-              filename: Optional[str], threshold: int = 300) -> None:
+              filename: Optional[str], threshold: int = 300,
+              update_hook: Optional[str] = None) -> None:
 
     if not oaclient.token:
         raise NoTokenError("No token to monitor")
@@ -119,6 +135,10 @@ def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str],
     if filename:
         oaclient.start_file_writer(filename)
 
+    # Assume the access token has been changed since the last startup
+    if update_hook:
+        run_update_hook(update_hook, oaclient.token['access_token'])
+
     try:
         while True:
             wait_for_refresh_timeout(oaclient, threshold)
@@ -126,7 +146,9 @@ def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str],
             oaclient.refresh_token()
             oaclient.save_session()
 
-            if log.level >= logging.DEBUG and not filename and not sockname:
+            if update_hook:
+                run_update_hook(update_hook, oaclient.token['access_token'])
+            elif log.level >= logging.DEBUG and not filename and not sockname:
                 print("\nBEGIN ACCESS TOKEN")
                 if oaclient.token and 'access_token' in oaclient.token:
                     print(oaclient.token['access_token'])
@@ -161,6 +183,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('-q', '--quiet', action='store_true', help='limit unnecessary output')
     parser.add_argument('-t', '--threshold', type=int, default=300,
                         help='threshold before expiration to attempt to refresh tokens. (default=300s)')
+    parser.add_argument('-u', '--update-hook', type=str, default=None,
+                        help='path to command to call when token is updated (will receive access token on stdin)')
     parser.add_argument('--force', action='store_true', help='overwrite sessionfile if it exists')
     parser.add_argument('sessionfile', help='path to store encrypted session and refresh token')
     args = parser.parse_args()
@@ -193,6 +217,18 @@ def main() -> None:
         loglevel = logging.INFO
 
     logging.basicConfig(stream=sys.stderr, level=loglevel)
+
+    if args.update_hook:
+        try:
+            st = os.stat(args.update_hook)
+        except IOError as ex:
+            raise FatalError(f"Could not stat update hook {args.update_hook}: {ex.strerror}") from ex
+
+        if not stat.S_ISREG(st.st_mode):
+            raise FatalError(f"Update hook {args.update_hook} is not a regular file.")
+
+        if st.st_mode & stat.S_IXUSR == 0:
+            raise FatalError(f"Update hook {args.update_hook} is not executable.")
 
     if args.pidfile:
         pidfile_path = os.path.realpath(args.pidfile)
@@ -260,6 +296,10 @@ def main() -> None:
     except NoPrivateKeyError as ex:
         raise FatalError(f"\n{str(ex)}") from ex
 
+    daemonize = False
+    if args.logfile:
+        daemonize = True
+
     if not args.file and not args.socket:
         columns = shutil.get_terminal_size((80, 25))[0]
         if not args.quiet:
@@ -270,17 +310,22 @@ def main() -> None:
 
         if oaclient.token and 'access_token' in oaclient.token:
             if not args.quiet:
-                print("Current access token follows:", file=sys.stderr)
-                print(columns * '-', file=sys.stderr)
-            print(oaclient.token['access_token'])
-            if not args.quiet:
-                print(columns * '-', file=sys.stderr)
+                raise FatalError("No file, socket, or update hook was specified")
+            if oaclient.token and 'access_token' in oaclient.token:
+                if not args.quiet:
+                    print("Current access token follows:", file=sys.stderr)
+                    print(columns * '-', file=sys.stderr)
+                print(oaclient.token['access_token'])
+                if not args.quiet:
+                    print(columns * '-', file=sys.stderr)
+            else:
+                log.error("No valid access token found.")
+            sys.exit(0)
         else:
-            log.error("No valid access token found.")
-        sys.exit(0)
+            daemonize = False
 
     logfile: Optional[TextIO] = None
-    if args.logfile:
+    if daemonize:
         try:
             # We open it here just to get an error for the user before
             # we daemonize.
@@ -313,14 +358,14 @@ def main() -> None:
             logging.basicConfig(stream=sys.stderr, level=log.level,
                                 datefmt=DATE_FORMAT, format=LOG_FORMAT,
                                 force=True)
-            main_loop(oaclient, args.socket, args.file, args.threshold)
+            main_loop(oaclient, args.socket, args.file, args.threshold, args.update_hook)
     except AlreadyLocked as ex:
         raise FatalError(f"{ex} by PID {oa2cd_pidfile.read_pid()}") from ex
 
 if __name__ == '__main__':
     try:
         main()
-    except FatalError as ex:
+    except (FatalError, OSError) as ex:
         print(str(ex) + "  Exiting.", file=sys.stderr)
         sys.exit(1)
 
