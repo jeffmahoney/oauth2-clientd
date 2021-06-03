@@ -438,7 +438,7 @@ class OAuth2ClientManager:
             self._setup_redirect_listener(port)
             port = self._get_redirect_listener_port()
 
-            redirect_uri = f'http://localhost:{port}/'
+            redirect_uri = f'http://localhost:{port}'
 
         self.session = OAuth2Session(self.client['client_id'], redirect_uri=redirect_uri,
                                      scope=self._registration['scope'])

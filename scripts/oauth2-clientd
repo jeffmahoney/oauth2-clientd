@@ -41,18 +41,17 @@ except ImportError:
             pass
 
 registrations: Dict[str, Dict[str, Sequence[str]]] = {
-    # Untested
-    # 'google': {
-    #     'authorize_endpoint': 'https://accounts.google.com/o/oauth2/auth',
-    #     'devicecode_endpoint': 'https://oauth2.googleapis.com/device/code',
-    #     'token_endpoint': 'https://accounts.google.com/o/oauth2/token',
-    #     'redirect_uri': 'urn:ietf:wg:oauth:2.0:oob',
-    #     'imap_endpoint': 'imap.gmail.com',
-    #     'pop_endpoint': 'pop.gmail.com',
-    #     'smtp_endpoint': 'smtp.gmail.com',
-    #     'sasl_method': 'OAUTHBEARER',
-    #     'scope': 'https://mail.google.com/',
-    # },
+    'google': {
+        'authorize_endpoint': 'https://accounts.google.com/o/oauth2/auth',
+        'devicecode_endpoint': 'https://oauth2.googleapis.com/device/code',
+        'token_endpoint': 'https://accounts.google.com/o/oauth2/token',
+        'redirect_uri': 'http://localhost',
+        'imap_endpoint': 'imap.gmail.com',
+        'pop_endpoint': 'pop.gmail.com',
+        'smtp_endpoint': 'smtp.gmail.com',
+        'sasl_method': 'OAUTHBEARER',
+        'scope': 'https://mail.google.com/',
+    },
     'microsoft': {
         'authorize_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
         'devicecode_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/devicecode',

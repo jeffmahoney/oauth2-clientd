@@ -91,3 +91,71 @@ key is used during startup to unlock the saved tokens and is unused after
 that.  The refresh token is kept in memory but never written to disk in
 unencrypted form.  The access token is available in plaintext but should
 be configured with a short expiration time.
+
+## Client IDs
+
+A client ID and optional secret is required for oauth2-clientd to
+successfully authenticate via OAUTH2.
+
+### Office 365
+
+For corporate Office 365, your administrator will have to add a client ID
+to your organization's Active Directory instance.
+
+### Outlook.com personal accounts
+
+Outlook.com personal accounts are not supported yet and need more research.
+
+### Gmail and Google Workspace
+
+For personal Gmail accounts, you'll need to register this application
+as a valid application in the Google Cloud Platform [Console](https://console.cloud.google.com/apis/credentials).  The same applies to Workspace domains
+but your account must have administrative privileges to do it.
+
+If you haven't used this service prior to configuring these Client IDs, you'll
+have to accept the terms of service and create a new project (or use an
+existing one).
+
+Once the project is created, select it and go to the APIs [pane](https://console.cloud.google.com/apis).
+
+There, you'll need to configure the "OAuth Consent Screen" first.
+
+You'll need to choose a user type. `External` will work for the purposes
+of setting up the client IDs for this use.  Next you'll enter a workflow:
+
+- (1) OAuth Consent Screen
+  - App Information
+    -  App name: `<oauth2-clientd>` -- This is for your own reference
+    -  User support email: `<this will be a pull down of your registered email addresses or groups>`
+    -  App logo: (optional)
+
+  - App domain (optional)
+  - Authorized domains (optional)
+  - Developer contact information `<same email address as above>`
+
+- (2) Scopes
+  - Click on _Add or remove scopes_
+  - Manually add scopes
+    - `https://mail.google.com`
+
+- (3) Test Users
+  - Click on _Add users_
+  - Add your gmail address
+
+
+Next select the _Credentials_ pane.
+
+Click _+ CREATE CREDENTIALS_ and select _OAuth Client ID_.  The
+application type will be _Web Application._  Once you select it, a number
+of other fields will appear.  The _Name_ field is for you to be able to
+identify the client ID later and can be whatever you like.  Click
+_+ Add URI_ under the _Authorized redirect URIs_ heading and add
+`http://localhost` before clicking _Create_.  Once you've created it,
+it will display the client ID and secret.  These will be available via
+the Credentials console for you to reference in the future.
+
+Once you have the client ID and secret, you can establish your tokens using
+
+    $ oauth2-clientd -P google -c <clientid> -a /path/to/sessionfile
+
+and then following the instructions under [Getting Started][#Getting-Started].
