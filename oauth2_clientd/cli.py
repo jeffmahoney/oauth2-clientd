@@ -212,7 +212,7 @@ def main() -> None:
 
     loglevel = logging.WARNING
     if args.debug:
-        logevel = logging.DEBUG
+        loglevel = logging.DEBUG
     elif args.verbose:
         loglevel = logging.INFO
 
