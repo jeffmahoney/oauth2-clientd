@@ -10,7 +10,7 @@ from setuptools import setup
 
 setup(
     name="oauth2-clientd",
-    version="0.5",
+    version="0.6",
     python_requires='>=3.6',
 
     author="Jeff Mahoney",
@@ -18,5 +18,5 @@ setup(
     description = "OAUTH2 client that caches refresh tokens securely",
     install_requires=['requests-oauthlib', 'python-daemon', 'cryptography',
                       'atomicwrites'],
-    packages = [ "oauth2_clientmanager" ],
+    packages = [ "oauth2_clientd" ],
     scripts=["scripts/oauth2-clientd"])
