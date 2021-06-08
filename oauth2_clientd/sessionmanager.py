@@ -2,7 +2,6 @@
 
 import os
 import os.path
-import argparse
 import threading
 import http.server
 import socket
@@ -13,10 +12,7 @@ import json
 import secrets
 import hashlib
 import base64
-import time
 import getpass
-import shutil
-import signal
 import stat
 import logging
 
@@ -29,8 +25,6 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-
-import daemon # type: ignore
 from requests_oauthlib import OAuth2Session # type: ignore
 
 log = logging.getLogger(__name__)
