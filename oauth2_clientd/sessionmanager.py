@@ -42,7 +42,6 @@ except ImportError:
     class ThreadingHTTPServer(ThreadingMixIn, http.server.HTTPServer): # type: ignore
         daemon_threads = True
 
-
 class _RedirectURIHandler(http.server.BaseHTTPRequestHandler):
     def log_request(self, code: Union[int, str] = '-',
                     size: Union[int, str] = '-') -> None:
