@@ -42,11 +42,9 @@ except ImportError:
     class ThreadingHTTPServer(ThreadingMixIn, http.server.HTTPServer): # type: ignore
         daemon_threads = True
 
-
 class _RedirectURIHandler(http.server.BaseHTTPRequestHandler):
     def log_request(self, code: Union[int, str] = '-',
                     size: Union[int, str] = '-') -> None:
-        server = cast(_ThreadingHTTPServerWithContext, self.server)
         if log.level >= logging.DEBUG:
             super().log_request(code, size)
 
@@ -89,7 +87,6 @@ class _RedirectURIHandler(http.server.BaseHTTPRequestHandler):
 class _TokenSocketHandler(http.server.BaseHTTPRequestHandler):
     def log_request(self, code: Union[int, str] = '-',
                     size: Union[int, str] = '-') -> None:
-        server = cast(_ThreadingHTTPServerWithContext, self.server)
         if log.level >= logging.INFO:
             super().log_request(code, size)
 
