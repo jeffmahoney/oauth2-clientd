@@ -30,6 +30,7 @@ LOG_FORMAT = "%(asctime)s.%(msecs)03d %(threadName)s[%(process)d] %(levelname)s 
 try:
     from contextlib import nullcontext
 except ImportError:
+    # pylint: disable=invalid-name
     class nullcontext(contextlib.AbstractContextManager): # type: ignore
         def __init__(self, enter_result=None):
             self.enter_result = enter_result
