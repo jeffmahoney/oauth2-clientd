@@ -12,8 +12,10 @@ import getpass
 import contextlib
 import subprocess
 import logging
+from configparser import ConfigParser
+import importlib.resources as pkg_resources
 
-from typing import Any, Dict, List, Optional, TextIO
+from typing import Any, Dict, List, Optional, TextIO, Union
 
 import daemon # type: ignore
 import daemon.pidfile # type: ignore
@@ -26,6 +28,11 @@ from .sessionmanager import NoTokenError, NoPrivateKeyError
 log = logging.getLogger()
 DATE_FORMAT='%Y-%m-%d %H:%M:%S'
 LOG_FORMAT = "%(asctime)s.%(msecs)03d %(threadName)s[%(process)d] %(levelname)s %(message)s"
+
+DEFAULT_CONFIG_PATHS = [
+    '/etc/oauth2-clientd.conf',
+    os.path.expanduser('~/.config/oauth2-clientd/oauth2-clientd.conf')
+]
 
 try:
     from contextlib import nullcontext
@@ -40,41 +47,6 @@ except ImportError:
 
         def __exit__(self, *excinfo):
             pass
-
-registrations: Dict[str, Dict[str, str]] = {
-    'google': {
-        'authorize_endpoint': 'https://accounts.google.com/o/oauth2/auth',
-        'devicecode_endpoint': 'https://oauth2.googleapis.com/device/code',
-        'token_endpoint': 'https://accounts.google.com/o/oauth2/token',
-        'redirect_uri': 'http://localhost',
-        'imap_endpoint': 'imap.gmail.com',
-        'pop_endpoint': 'pop.gmail.com',
-        'smtp_endpoint': 'smtp.gmail.com',
-        'sasl_method': 'OAUTHBEARER',
-        'scope': 'https://mail.google.com/',
-    },
-    'microsoft': {
-        'authorize_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-        'devicecode_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/devicecode',
-        'token_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
-        #'redirect_uri': 'https://login.microsoftonline.com/common/oauth2/nativeclient',
-        'redirect_uri' : 'http://localhost',
-        'imap_endpoint': 'outlook.office365.com',
-        'pop_endpoint': 'outlook.office365.com',
-        'smtp_endpoint': 'smtp.office365.com',
-        'sasl_method': 'XOAUTH2',
-        'scope': 'offline_access https://outlook.office.com/IMAP.AccessAsUser.All '
-                  'https://outlook.office.com/POP.AccessAsUser.All '
-                  'https://outlook.office.com/SMTP.Send',
-    },
-    'suse-o365': {
-        'inherits' : 'microsoft',
-        'client_id' : '3ce62cca-417a-462c-bbe5-03d1888daf53',
-        'tenant' : 'mysuse.onmicrosoft.com',
-        'client_secret' : ''
-    }
-}
-DEFAULT_PROVIDER = 'suse-o365'
 
 def shutdown_listeners_and_exit(oaclient: OAuth2ClientManager) -> None:
     log.warning("Shutting down")
@@ -157,12 +129,31 @@ def main_loop(oaclient: OAuth2ClientManager, sockname: Optional[str],
     except KeyboardInterrupt:
         shutdown_listeners_and_exit(oaclient)
 
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+def parse_arguments(config: ConfigParser) -> argparse.Namespace:
+    provider_help : Dict[str, Union[Optional[str], List[str]]]
+
+    try:
+        default_provider = config['DEFAULT']['provider']
+        provider_help = {
+            'default' : default_provider,
+            'help' : f'provider to request tokens (default={default_provider})',
+        }
+    except KeyError:
+        provider_help = {
+            'default' : None,
+            'help' : 'provider to request tokens',
+        }
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('-h', '--help', action='store_true',
+                        help='display this message and exit')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='increase verbosity')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='enable debug output')
+    parser.add_argument('-C', '--config', type=str, action='append',
+                        help='specify config file -- can be invoked more than once; empty path or /dev/null will clear options loaded from previously read/default files')
+
     parser.add_argument('-a', '--authorize', action='store_true',
                         help='generate a new refresh token on startup using the default clientid and secret for the provider')
     parser.add_argument('-c', '--clientid', type=str, default=None,
@@ -177,35 +168,78 @@ def parse_arguments() -> argparse.Namespace:
                         help='write daemon pid to <pidfile>')
     parser.add_argument('-s', '--socket', type=str, default=None,
                         help='create a UNIX socket at <socket> with an http listener to provide access token on request')
-    parser.add_argument('-P', '--provider', type=str, default=DEFAULT_PROVIDER,
-                        choices=registrations.keys(),
-                        help=f'provider to request tokens (default={DEFAULT_PROVIDER})')
+    parser.add_argument('-P', '--provider', type=str, **provider_help) # type: ignore
+    parser.add_argument('-l', '--list-providers', action='store_true',
+                        help='print available providers and exit.')
+    parser.add_argument('--dump-config', action='store_true',
+                        help='display loaded configuration and exit')
     parser.add_argument('-q', '--quiet', action='store_true', help='limit unnecessary output')
     parser.add_argument('-t', '--threshold', type=int, default=300,
                         help='threshold before expiration to attempt to refresh tokens. (default=300s)')
     parser.add_argument('-u', '--update-hook', type=str, default=None,
                         help='path to command to call when token is updated (will receive access token on stdin)')
     parser.add_argument('--force', action='store_true', help='overwrite sessionfile if it exists')
+
+    # Options that don't require a session file and shouldn't fail should the argument
+    # be absent.
+    (args, _) = parser.parse_known_args()
+    if (args.list_providers or args.dump_config) and not args.help:
+        return args
+
     parser.add_argument('sessionfile', help='path to store encrypted session and refresh token')
+
+    if args.help:
+        parser.print_help()
+        sys.exit(0)
+
     args = parser.parse_args()
     return args
 
-def resolve_registration(provider: str, loops: Optional[List[str]] = None) -> Dict[str, str]:
-    reg = registrations[provider]
+def resolve_registration(config: ConfigParser, provider: str, loops: Optional[List[str]] = None) -> Dict[str, str]:
+    reg = dict(config[provider])
     if 'inherits' in reg:
         if loops is None:
             loops = [provider]
         elif provider in loops:
-            raise ValueError(f"Provider '{provider}' is already in the dependency chain")
+            raise FatalError(f"Config error: Provider '{provider}' is already in the dependency chain")
         else:
             loops.append(provider)
-        inherited = resolve_registration(reg['inherits'], loops)
+        if reg['inherits'] not in config:
+            raise FatalError(f"Config error: Provider '{provider}' inherits from provider '{reg['inherits']}' which does not exist.")
+        inherited = resolve_registration(config, reg['inherits'], loops)
         reg = { **inherited, **reg }
 
     return reg
 
+_REQUIRED_KEYS = [ 'authorize_endpoint', 'token_endpoint',
+                   'sasl_method', 'scope', 'redirect_uri' ]
+
+def validate_registration(provider: str, registration: Dict[str, str]):
+    for key in _REQUIRED_KEYS:
+        if not key in registration:
+            raise FatalError(f"Definition for provider '{provider}' is missing option '{key}'.")
+
 class FatalError(RuntimeError):
     pass
+
+def read_config(config: ConfigParser, path: str, verbose: bool) -> None:
+    try:
+        msg = f"Reading config from '{path}'"
+        with open(path, encoding='utf8', errors="surrogateescape") as config_file:
+            config.read_file(config_file)
+            msg += "."
+    except OSError as ex:
+        msg += f" failed: {ex.strerror}. [ignoring]"
+    finally:
+        if verbose:
+            print(msg, file=sys.stderr)
+
+def dump_config(config: ConfigParser, stream: TextIO):
+    print("Loaded configuration: ", file=stream)
+    config.write(stream)
+
+def dump_providers(config: ConfigParser, stream: TextIO):
+    print(f"Available providers: {', '.join(config.sections())}", file=stream)
 
 def update_logging(verbose: bool, debug: bool) -> None:
     loglevel = logging.WARNING
@@ -216,14 +250,70 @@ def update_logging(verbose: bool, debug: bool) -> None:
 
     log.setLevel(loglevel)
 
+def early_verbose(args: List[str]) -> bool:
+    return ('-v' in args or '--verbose' in args or
+            '-d' in args or '--debug' in args)
+
 def main() -> None:
+    config = ConfigParser()
+
     stderr_log_handler = logging.StreamHandler(stream=sys.stderr)
     log.addHandler(stderr_log_handler)
     update_logging(False, False)
 
-    args = parse_arguments()
+    # We read the configs prior to parsing the command line but we'll still want
+    # to be able to report opening configs
+    verbose = early_verbose(sys.argv)
+
+    msg = "Reading 'builtin-providers.conf' from package data"
+    try:
+        text = pkg_resources.open_text('oauth2_clientd.data', 'builtin-providers.conf')
+        config.read_file(text)
+        if verbose:
+            print(msg + ".", file=sys.stderr)
+    except FileNotFoundError:
+        print(msg + " failed.  Defaults may be unavailable.", file=sys.stderr)
+
+    for path in DEFAULT_CONFIG_PATHS:
+        read_config(config, path, verbose)
+
+    args = parse_arguments(config)
 
     update_logging(args.verbose, args.debug)
+
+    # If -C was used, we'll need to add those into the mix
+    if args.config:
+        for configfile in args.config:
+            if configfile in ('', '/dev/null'):
+                config = ConfigParser()
+                if args.debug:
+                    print("Resetting configuration.", file=sys.stderr)
+                continue
+            read_config(config, configfile, verbose)
+
+    if args.dump_config:
+        dump_config(config, sys.stdout)
+        sys.exit(0)
+
+    if args.list_providers:
+        dump_providers(config, sys.stdout)
+        sys.exit(0)
+
+    if args.provider:
+        provider = args.provider
+    else:
+        try:
+            provider = config['DEFAULT']['provider']
+        except KeyError as ex:
+            raise FatalError('No default provider configured.') from ex
+
+    if not provider in config:
+        if args.debug:
+            dump_config(config, sys.stderr)
+        elif args.verbose:
+            dump_providers(config, sys.stderr)
+
+        raise FatalError(f"No provider '{provider}' configured.")
 
     if args.update_hook:
         try:
@@ -251,7 +341,8 @@ def main() -> None:
 
     try:
         if args.authorize:
-            registration = resolve_registration(args.provider)
+            registration = resolve_registration(config, provider)
+            validate_registration(provider, registration)
             if args.clientid:
                 clientid = args.clientid
             elif 'client_id' in registration:

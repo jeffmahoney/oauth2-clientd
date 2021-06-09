@@ -18,5 +18,7 @@ setup(
     description = "OAUTH2 client that caches refresh tokens securely",
     install_requires=['requests-oauthlib', 'python-daemon', 'cryptography',
                       'atomicwrites'],
-    packages = [ "oauth2_clientd" ],
+    packages = [ "oauth2_clientd", "oauth2_clientd.data" ],
+    package_data={'oauth2_clientd': ['data/*.conf']},
+
     scripts=["scripts/oauth2-clientd"])
