@@ -92,6 +92,58 @@ that.  The refresh token is kept in memory but never written to disk in
 unencrypted form.  The access token is available in plaintext but should
 be configured with a short expiration time.
 
+## Configuration
+
+With version 0.7, oauth2-clientd uses external configuration files to setup
+provider definitions.  The defaults have remained the same and are shipped in
+a package resource file named `builtin-providers.conf`.  This file,
+`/etc/oauth2-client.conf`, and `~/.config/oauth2-clientd/oauth2-clientd.conf`
+will be read in order and each is optional.  Additional configuration files
+can be specified on the command line via the `-C <filename>`.  The defaults
+can be cleared by using `-C ""` or `-C /dev/null` and subsequent uses of `-C`
+will again be additive.
+
+It is possible to extend provider definitions by inheriting from existing ones,
+adding or clearing options as needed.  The most common use for this is
+to specify site- or user- specific client IDs and optional client secrets
+to existing profile definitions.  To clear an option, assign it an empty value.
+
+### Format
+
+The configuration file format is the familiar [.INI](https://en.wikipedia.org/wiki/INI_file)
+file format used in many projects.  The `DEFAULT` section defines the default
+provider definition using the `provider` option.  Other sections define
+providers using the name of the section as the name of the provider.  The
+options consumed by this tool are as follows:
+
+- `authorize_endpoint`: The URI to use to obtain an authorization code.
+- `token_endpoint`: The URI to use to obtain tokens using the authorization
+code or the refresh token..
+- `redirect_uri`: The URI to redirect the client to after successfully
+obtaining the refresh token.  For this tool to work properly, it must be: `http://localhost`
+- `sasl_method`: The SASL method used.  Will be `XOAUTH2` or `OAUTHBEARER`.
+- `scope`: The scopes associated with the token.  These will be site and
+resource specific.  Please reference the documentation for the service you
+are using to obtain proper scopes for the resource being accessed.
+
+For a full provider definition, reference the provided `builtin-providers.conf`
+file.
+
+### Example
+
+The following example, using contrived credentials, extends the Office365
+definition for your site and uses it as the default provider.  These
+configuration sections can be added to a one of the known locations shown
+above or in a new file used via `-C`.
+
+    [DEFAULT]
+    provider = site-o365
+    
+    [site-o365]
+    inherits = office365
+    client_id = e9b20c6d-641d-4cf4-878d-fe78ff79746f
+    client_secret =
+
 ## Client IDs
 
 A client ID and optional secret is required for oauth2-clientd to
@@ -100,7 +152,11 @@ successfully authenticate via OAUTH2.
 ### Office 365
 
 For corporate Office 365, your administrator will have to add a client ID
-to your organization's Active Directory instance.
+to your organization's Active Directory instance.  Once a client ID and
+optional client secret have been obtained, they can be specified using the
+`-c <clientid>` option or by adding a `client_id= <clientid>` option to a
+provider definition in a known configuration file.  See
+[Configuration][#Configuration] above.
 
 ### Outlook.com personal accounts
 
@@ -159,3 +215,5 @@ Once you have the client ID and secret, you can establish your tokens using
     $ oauth2-clientd -P google -c <clientid> -a /path/to/sessionfile
 
 and then following the instructions under [Getting Started][#Getting-Started].
+The client ID can also be specified in a new provider section in a known
+configuration file.  See [Configuration][#Configuration] above.
