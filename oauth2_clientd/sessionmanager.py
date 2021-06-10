@@ -16,7 +16,7 @@ import getpass
 import stat
 import logging
 
-from typing import cast, Any, Dict, Optional, Sequence, Tuple, Type, Union
+from typing import cast, Any, Dict, Optional, Tuple, Type, Union
 
 from atomicwrites import atomic_write
 
@@ -130,8 +130,7 @@ class _UnixSocketThreadingHTTPServer(_ThreadingHTTPServerWithContext):
         return req, self.server_address
 
 class OAuth2ClientManager:
-    def __init__(self, registration: Dict[str, Sequence[str]],
-                 client: Dict[str, str]) -> None:
+    def __init__(self, registration: Dict[str, str], client: Dict[str, str]) -> None:
         self._registration = registration
         self.client = client
         self.session_file_path: Optional[str] = None
@@ -416,7 +415,8 @@ class OAuth2ClientManager:
 
 
     @classmethod
-    def from_new_authorization(cls, registration: Dict[str, Sequence[str]], client: Dict[str, str], port: int = 0) -> 'OAuth2ClientManager':
+    def from_new_authorization(cls, registration: Dict[str, str], client: Dict[str, str],
+                               port: int = 0) -> 'OAuth2ClientManager':
         obj = cls(registration, client)
         obj._init_saved_session()
         obj._new_authorization(port)

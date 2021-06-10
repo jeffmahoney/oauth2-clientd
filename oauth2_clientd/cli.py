@@ -13,7 +13,7 @@ import contextlib
 import subprocess
 import logging
 
-from typing import Any, Dict, Optional, Sequence, TextIO
+from typing import Any, Dict, List, Optional, TextIO
 
 import daemon # type: ignore
 import daemon.pidfile # type: ignore
@@ -41,7 +41,7 @@ except ImportError:
         def __exit__(self, *excinfo):
             pass
 
-registrations: Dict[str, Dict[str, Sequence[str]]] = {
+registrations: Dict[str, Dict[str, str]] = {
     'google': {
         'authorize_endpoint': 'https://accounts.google.com/o/oauth2/auth',
         'devicecode_endpoint': 'https://oauth2.googleapis.com/device/code',
@@ -63,9 +63,9 @@ registrations: Dict[str, Dict[str, Sequence[str]]] = {
         'pop_endpoint': 'outlook.office365.com',
         'smtp_endpoint': 'smtp.office365.com',
         'sasl_method': 'XOAUTH2',
-        'scope': ('offline_access https://outlook.office.com/IMAP.AccessAsUser.All',
-                  'https://outlook.office.com/POP.AccessAsUser.All',
-                  'https://outlook.office.com/SMTP.Send'),
+        'scope': 'offline_access https://outlook.office.com/IMAP.AccessAsUser.All '
+                  'https://outlook.office.com/POP.AccessAsUser.All '
+                  'https://outlook.office.com/SMTP.Send',
     },
     'suse-o365': {
         'inherits' : 'microsoft',
@@ -190,7 +190,7 @@ def parse_arguments() -> argparse.Namespace:
     args = parser.parse_args()
     return args
 
-def resolve_registration(provider, loops=None):
+def resolve_registration(provider: str, loops: Optional[List[str]] = None) -> Dict[str, str]:
     reg = registrations[provider]
     if 'inherits' in reg:
         if loops is None:
