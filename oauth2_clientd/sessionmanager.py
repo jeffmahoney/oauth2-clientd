@@ -483,8 +483,11 @@ class OAuth2ClientManager:
     def write_access_token(self, filename: str) -> None:
         if not self.token or 'access_token' not in self.token:
             raise NoTokenError("No access token available.")
-        with atomic_write(filename, overwrite=True) as access_file:
-            print(self.token['access_token'], file=access_file)
+        try:
+            with atomic_write(filename, overwrite=True) as access_file:
+                print(self.token['access_token'], file=access_file)
+        except OSError as ex:
+            log.warning(f"Failed to write access token to file '{filename}': {ex.strerror}")
 
     def _file_writer(self, filename: str) -> None:
         if not self.token or 'access_token' not in self.token:
