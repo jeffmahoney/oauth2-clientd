@@ -20,22 +20,16 @@ from typing import cast, Any, Dict, Optional, Tuple, Type, Union
 
 from atomicwrites import atomic_write
 
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives import serialization, hashes
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
 from requests_oauthlib import OAuth2Session # type: ignore
 
+from .encryption import generate_rsa_keypair, decrypt_private_key, encrypt, decrypt
+from .encryption import NoPrivateKeyError
 from .helpers import b64decode, b64encode_str, encode_dict
 
 log = logging.getLogger(__name__)
 
 class NoTokenError(RuntimeError):
     """The token is not available"""
-
-class NoPrivateKeyError(RuntimeError):
-    """Cannot unlock private key"""
 
 try:
     from http.server import ThreadingHTTPServer
@@ -131,16 +125,12 @@ class _UnixSocketThreadingHTTPServer(_ThreadingHTTPServerWithContext):
         req, _ = super().get_request()
         return req, self.server_address
 
-def crypto_padding() -> padding.OAEP:
-    return padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                        algorithm=hashes.SHA256(), label=None)
-
 class OAuth2ClientManager:
     def __init__(self, registration: Dict[str, str], client: Dict[str, str]) -> None:
         self._registration = registration
         self.client = client
         self.session_file_path: Optional[str] = None
-        self.public_key: Optional[rsa.RSAPublicKey] = None
+        self.public_key_pem: Optional[bytes] = None
         self.saved_session: Dict[str, Any] = {}
         self.session: OAuth2Session = None
 
@@ -167,39 +157,6 @@ class OAuth2ClientManager:
             expiry = self.token['expires_at']
         return expiry
 
-    def _init_saved_session(self) -> None:
-        password_bytes = None
-        while password_bytes is None:
-            try:
-                pw1 = getpass.getpass("Enter password for new private key (min 10 chars): ")
-                if len(pw1) < 10:
-                    print("Password too short.  Must be longer than 10 characters.",
-                          file=sys.stderr)
-                    continue
-                pw2 = getpass.getpass("Repeat: ")
-            except (KeyboardInterrupt, EOFError) as ex:
-                raise NoPrivateKeyError("Cannot create private key without password.") from ex
-
-            if pw1 == pw2:
-                password_bytes = bytes(pw1.encode())
-            else:
-                print("Passwords don't match.  Try again.")
-
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048,
-                                               backend=default_backend())
-        self.public_key = private_key.public_key()
-
-        private_key_pem = private_key.private_bytes(encoding=serialization.Encoding.PEM,
-                                                    format=serialization.PrivateFormat.PKCS8,
-                                                    encryption_algorithm=serialization.BestAvailableEncryption(password_bytes))
-        public_key_pem = self.public_key.public_bytes(encoding=serialization.Encoding.PEM,
-                                                      format=serialization.PublicFormat.SubjectPublicKeyInfo)
-
-        self.saved_session = {
-            'private_key' : private_key_pem.decode('utf-8'),
-            'public_key' : public_key_pem.decode('utf-8'),
-        }
-
     @classmethod
     def from_saved_session(cls, path: str) -> 'OAuth2ClientManager':
         with open(path, 'rb') as session_file:
@@ -220,52 +177,26 @@ class OAuth2ClientManager:
 
             password_bytes = bytes(password.encode())
             try:
-                private_key = serialization.load_pem_private_key(private_key_pem_bytes,
-                                                                 password=password_bytes,
-                                                                 backend=default_backend())
+                private_key = decrypt_private_key(private_key_pem_bytes, password_bytes)
             except ValueError as ex: # Usually bad password
                 print(ex)
 
-        key = private_key.decrypt(b64decode(saved_session['cryptoparams']['key']),
-                                  crypto_padding())
+        data = decrypt(private_key, saved_session['cryptoparams'],
+                       b64decode(saved_session['data']))
+
         del private_key
 
-        nonce = b64decode(saved_session['cryptoparams']['nonce'])
-
-        cipher = Cipher(algorithms.AES(key), modes.CTR(nonce), backend=default_backend())
-        decryptor = cipher.decryptor()
-        data = decryptor.update(b64decode(saved_session['data'])) + decryptor.finalize()
         session = json.loads(b64decode(data))
 
         obj = cls(session['registration'], session['client'])
         obj.session_file_path = path
         obj.saved_session = saved_session
-        obj.public_key = serialization.load_pem_public_key(public_key_pem_bytes,
-                                                           backend=default_backend())
+        obj.public_key_pem = public_key_pem_bytes
 
         obj.token = session['tokendata']
         obj.session = OAuth2Session(session['client'], token=obj.token)
 
         return obj
-
-    def _encrypt(self, data: bytes) -> Tuple[bytes, Dict[str, str]]:
-        if not self.public_key:
-            raise RuntimeError("No public key available")
-        key = os.urandom(32)
-        nonce = os.urandom(16)
-
-        params: Dict[str, str] = {
-            'algo' : 'AES',
-            'mode' : 'CTR',
-            'key' : b64encode_str(self.public_key.encrypt(key, crypto_padding())),
-            'nonce' : b64encode_str(nonce),
-        }
-
-        cipher = Cipher(algorithms.AES(key), modes.CTR(nonce), backend=default_backend())
-        encryptor = cipher.encryptor()
-        encrypted_data = encryptor.update(data) + encryptor.finalize()
-
-        return encrypted_data, params
 
     def save_session(self, path: Optional[str] = None, overwrite: bool = True) -> None:
         if path is None and self.session_file_path:
@@ -275,13 +206,16 @@ class OAuth2ClientManager:
         else:
             raise ValueError("No path specified and no default available.")
 
+        if self.public_key_pem is None:
+            raise ValueError("No public key available for encryption.")
+
         data_dict = {
             'client' : self.client,
             'registration' : self._registration,
             'tokendata' : self.token,
         }
 
-        data, params = self._encrypt(encode_dict(data_dict))
+        data, params = encrypt(self.public_key_pem, encode_dict(data_dict))
         self.saved_session['data'] = b64encode_str(data)
         self.saved_session['cryptoparams'] = params
 
@@ -383,7 +317,12 @@ class OAuth2ClientManager:
     def from_new_authorization(cls, registration: Dict[str, str], client: Dict[str, str],
                                port: int = 0) -> 'OAuth2ClientManager':
         obj = cls(registration, client)
-        obj._init_saved_session()
+        keypair = generate_rsa_keypair()
+        obj.saved_session = {
+                'public_key' : keypair['public_key_pem'].decode('utf-8'),
+                'private_key' : keypair['private_key_pem'].decode('utf-8'),
+                }
+        obj.public_key_pem = keypair['public_key_pem']
         obj._new_authorization(port)
 
         return obj
