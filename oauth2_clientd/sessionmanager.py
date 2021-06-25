@@ -27,6 +27,8 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from requests_oauthlib import OAuth2Session # type: ignore
 
+from .helpers import b64decode, b64encode_str, encode_dict
+
 log = logging.getLogger(__name__)
 
 class NoTokenError(RuntimeError):
@@ -129,6 +131,10 @@ class _UnixSocketThreadingHTTPServer(_ThreadingHTTPServerWithContext):
         req, _ = super().get_request()
         return req, self.server_address
 
+def crypto_padding() -> padding.OAEP:
+    return padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                        algorithm=hashes.SHA256(), label=None)
+
 class OAuth2ClientManager:
     def __init__(self, registration: Dict[str, str], client: Dict[str, str]) -> None:
         self._registration = registration
@@ -220,16 +226,16 @@ class OAuth2ClientManager:
             except ValueError as ex: # Usually bad password
                 print(ex)
 
-        key = private_key.decrypt(cls._b64decode(saved_session['cryptoparams']['key']),
-                                  cls._crypto_padding())
+        key = private_key.decrypt(b64decode(saved_session['cryptoparams']['key']),
+                                  crypto_padding())
         del private_key
 
-        nonce = cls._b64decode(saved_session['cryptoparams']['nonce'])
+        nonce = b64decode(saved_session['cryptoparams']['nonce'])
 
         cipher = Cipher(algorithms.AES(key), modes.CTR(nonce), backend=default_backend())
         decryptor = cipher.decryptor()
-        data = decryptor.update(cls._b64decode(saved_session['data'])) + decryptor.finalize()
-        session = json.loads(cls._b64decode(data))
+        data = decryptor.update(b64decode(saved_session['data'])) + decryptor.finalize()
+        session = json.loads(b64decode(data))
 
         obj = cls(session['registration'], session['client'])
         obj.session_file_path = path
@@ -242,47 +248,6 @@ class OAuth2ClientManager:
 
         return obj
 
-    @staticmethod
-    def _crypto_padding() -> padding.OAEP:
-        return padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                            algorithm=hashes.SHA256(), label=None)
-
-    @staticmethod
-    def _encode_dict(dict_to_dump) -> bytes:
-        dump = bytes(json.dumps(dict_to_dump), 'utf-8')
-        return base64.urlsafe_b64encode(dump)
-
-    @staticmethod
-    def _decode_dict(json_dict: bytes) -> str:
-        text = base64.urlsafe_b64decode(json_dict)
-        return json.loads(text)
-
-    @classmethod
-    def _b64encode(cls, data: Union[bytes, str]) -> bytes:
-        if not isinstance(data, bytes):
-            data = bytes(data, 'utf-8')
-
-        return base64.urlsafe_b64encode(data)
-
-    @classmethod
-    def _b64encode_str(cls, data: bytes) -> str:
-        return cls._b64encode(data).decode('utf-8')
-
-    @classmethod
-    def _b64decode(cls, data: bytes) -> bytes:
-        if not isinstance(data, bytes):
-            data = bytes(data, 'utf-8')
-
-        return base64.urlsafe_b64decode(data)
-
-    @classmethod
-    def _b64decode_str(cls, data: Union[bytes, str]) -> str:
-        if not isinstance(data, bytes):
-            data = bytes(data, 'utf-8')
-
-        return base64.urlsafe_b64encode(data).decode('utf-8')
-
-
     def _encrypt(self, data: bytes) -> Tuple[bytes, Dict[str, str]]:
         if not self.public_key:
             raise RuntimeError("No public key available")
@@ -292,8 +257,8 @@ class OAuth2ClientManager:
         params: Dict[str, str] = {
             'algo' : 'AES',
             'mode' : 'CTR',
-            'key' : self._b64encode_str(self.public_key.encrypt(key, self._crypto_padding())),
-            'nonce' : self._b64encode_str(nonce),
+            'key' : b64encode_str(self.public_key.encrypt(key, crypto_padding())),
+            'nonce' : b64encode_str(nonce),
         }
 
         cipher = Cipher(algorithms.AES(key), modes.CTR(nonce), backend=default_backend())
@@ -316,8 +281,8 @@ class OAuth2ClientManager:
             'tokendata' : self.token,
         }
 
-        data, params = self._encrypt(self._encode_dict(data_dict))
-        self.saved_session['data'] = self._b64encode_str(data)
+        data, params = self._encrypt(encode_dict(data_dict))
+        self.saved_session['data'] = b64encode_str(data)
         self.saved_session['cryptoparams'] = params
 
         if path is None:
