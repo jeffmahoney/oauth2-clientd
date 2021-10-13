@@ -158,4 +158,4 @@ Once you have the client ID and secret, you can establish your tokens using
 
     $ oauth2-clientd -P google -c <clientid> -a /path/to/sessionfile
 
-and then following the instructions under [Getting Started][#Getting-Started].
+and then following the instructions under [Getting Started](#Getting-Started).
