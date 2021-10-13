@@ -155,6 +155,9 @@ class OAuth2ClientManager:
         self.authurl: Optional[str] = None
         self.authurl_lock = threading.Lock()
 
+        self.authtoken: Optional[str] = None
+        self.authtoken_lock = threading.Lock()
+
         self._server: Optional[_ThreadingHTTPServerWithContext] = None
         self._server_thread: Optional[threading.Thread] = None
 
@@ -423,6 +426,35 @@ class OAuth2ClientManager:
                 if self.authurl:
                     break
 
+    @staticmethod
+    def _print_authtoken_prompt() -> None:
+        print('Please enter the token your browser gave you: ', end='', flush=True)
+
+    @staticmethod
+    def validate_authtoken(url: str) -> bool:
+        """Validate that a token could potentially be an authtoken"""
+        return True
+
+    def _wait_for_authtoken_on_stdin(self) -> None:
+        self._print_authtoken_prompt()
+        while True:
+            (readers, _, _) = select.select([sys.stdin], [], [], 0.5)
+            with self.authtoken_lock:
+                if not self.authtoken and readers:
+                    try:
+                        token = sys.stdin.readline()
+                        if self.validate_authtoken(token):
+                            self.authtoken = token
+                        else:
+                            print("Error: No authcode provided.")
+                            self._print_authtoken_prompt()
+                            continue
+                    except KeyboardInterrupt:
+                        break
+                elif self.authtoken:
+                    print("(not necessary any longer)\nResponse provided by browser session.\n")
+                if self.authtoken:
+                    break
 
     @classmethod
     def from_new_authorization(cls, registration: Dict[str, Sequence[str]], client: Dict[str, str], port: int = 0) -> 'OAuth2ClientManager':
@@ -433,6 +465,8 @@ class OAuth2ClientManager:
         return obj
 
     def _new_authorization(self, port: int = 0) -> None:
+        if not 'auth_method' in self._registration.keys():
+            self._registration['auth_method'] = 'url'
         redirect_uri = self._registration['redirect_uri']
         if 'http://localhost' in redirect_uri:
             self._setup_redirect_listener(port)
@@ -453,25 +487,36 @@ class OAuth2ClientManager:
         if self._server:
             self._start_server()
             self._inform_user_of_listener()
-        self._wait_for_authurl_on_stdin()
-        if self._server:
-            self._stop_server()
+        if self._registration['auth_method'] == 'url':
+            self._wait_for_authurl_on_stdin()
+            if self._server:
+                self._stop_server()
 
-        if not self.authurl:
-            raise RuntimeError("Stopped waiting for authurl but none found.")
+            if not self.authurl:
+                raise RuntimeError("Stopped waiting for authurl but none found.")
 
-        # oauthlib expects redirects to be https -- no need for localhost
-        if 'http://localhost' in self.authurl:
-            os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+            # oauthlib expects redirects to be https -- no need for localhost
+            if 'http://localhost' in self.authurl:
+                os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-        # o365 requires the 'offline_access' scope in the request to issue
-        # refresh tokens but strips it in the response. oauthlib views that
-        # as a changed scope event that is handled as an error unless relaxed.
-        os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
-        self.token = self.session.fetch_token(self._registration['token_endpoint'],
-                                              authorization_response=self.authurl,
-                                              include_client_id=True,
-                                              **self.client, code_verifier=verifier)
+            # o365 requires the 'offline_access' scope in the request to issue
+            # refresh tokens but strips it in the response. oauthlib views that
+            # as a changed scope event that is handled as an error unless relaxed.
+            os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
+            self.token = self.session.fetch_token(self._registration['token_endpoint'],
+                                                  authorization_response=self.authurl,
+                                                  include_client_id=True,
+                                                  **self.client, code_verifier=verifier)
+        elif self._registration['auth_method'] == 'token':
+            self._wait_for_authtoken_on_stdin()
+            if self._server:
+                self._stop_server()
+            if not self.authtoken:
+                raise RuntimeError("Stopped waiting for authtoken but none found.")
+            self.token = self.session.fetch_token(self._registration['token_endpoint'],
+                                                  code=self.authtoken,
+                                                  include_client_id=True,
+                                                  **self.client, code_verifier=verifier)
 
     def refresh_token(self) -> None:
         log.info("Starting token refresh")

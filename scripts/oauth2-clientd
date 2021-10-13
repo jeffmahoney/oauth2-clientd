@@ -51,6 +51,7 @@ registrations: Dict[str, Dict[str, Sequence[str]]] = {
         'smtp_endpoint': 'smtp.gmail.com',
         'sasl_method': 'OAUTHBEARER',
         'scope': 'https://mail.google.com/',
+        'auth_method': 'token',
     },
     'microsoft': {
         'authorize_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
@@ -65,11 +66,13 @@ registrations: Dict[str, Dict[str, Sequence[str]]] = {
         'scope': ('offline_access https://outlook.office.com/IMAP.AccessAsUser.All',
                   'https://outlook.office.com/POP.AccessAsUser.All',
                   'https://outlook.office.com/SMTP.Send'),
+        'auth_method': 'url',
     },
     'suse-o365': {
         'inherits' : 'microsoft',
         'client_id' : '3ce62cca-417a-462c-bbe5-03d1888daf53',
         'tenant' : 'mysuse.onmicrosoft.com',
+        'auth_method': 'url',
         'client_secret' : ''
     }
 }
