@@ -23,7 +23,7 @@ from oauthlib.oauth2.rfc6749.errors import OAuth2Error # type: ignore
 from oauth2_clientmanager import OAuth2ClientManager
 from oauth2_clientmanager import NoTokenError, NoPrivateKeyError
 
-log = logging.getLogger(__name__)
+log = logging.getLogger()
 DATE_FORMAT='%Y-%m-%d %H:%M:%S'
 LOG_FORMAT = "%(asctime)s.%(msecs)03d %(threadName)s[%(process)d] %(levelname)s %(message)s"
 
@@ -207,16 +207,23 @@ def resolve_registration(provider, loops=None):
 class FatalError(RuntimeError):
     pass
 
-def main() -> None:
-    args = parse_arguments()
-
+def update_logging(verbose: bool, debug: bool) -> None:
     loglevel = logging.WARNING
-    if args.debug:
-        logevel = logging.DEBUG
-    elif args.verbose:
+    if debug:
+        loglevel = logging.DEBUG
+    elif verbose:
         loglevel = logging.INFO
 
-    logging.basicConfig(stream=sys.stderr, level=loglevel)
+    log.setLevel(loglevel)
+
+def main() -> None:
+    stderr_log_handler = logging.StreamHandler(stream=sys.stderr)
+    log.addHandler(stderr_log_handler)
+    update_logging(False, False)
+
+    args = parse_arguments()
+
+    update_logging(args.verbose, args.debug)
 
     if args.update_hook:
         try:
@@ -332,6 +339,8 @@ def main() -> None:
             # we daemonize.
             # pylint: disable=consider-using-with
             logfile = open(args.logfile, 'w+', encoding='utf8', errors="surrogateescape")
+            logfile_handler = logging.StreamHandler(stream=logfile)
+            log.addHandler(logfile_handler)
         except (OSError, IOError) as ex:
             raise FatalError(f"Failed to open logfile {logfile}: {ex.args[1]}.") from ex
 
@@ -354,12 +363,15 @@ def main() -> None:
                 sys.stdout.close()
                 sys.stderr = logfile
                 sys.stdout = logfile
+                log.removeHandler(stderr_log_handler)
+            else:
+                logfile_handler = stderr_log_handler
 
             # Now that we're starting up for real, some timestamps and other
             # information may be useful for logging.
-            logging.basicConfig(stream=sys.stderr, level=log.level,
-                                datefmt=DATE_FORMAT, format=LOG_FORMAT,
-                                force=True)
+            logfile_formatter = logging.Formatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
+            logfile_handler.setFormatter(logfile_formatter)
+
             main_loop(oaclient, args.socket, args.file, args.threshold, args.update_hook)
     except AlreadyLocked as ex:
         raise FatalError(f"{ex} by PID {oa2cd_pidfile.read_pid()}") from ex
