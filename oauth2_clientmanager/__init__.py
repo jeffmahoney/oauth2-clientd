@@ -52,7 +52,6 @@ except ImportError:
 class _RedirectURIHandler(http.server.BaseHTTPRequestHandler):
     def log_request(self, code: Union[int, str] = '-',
                     size: Union[int, str] = '-') -> None:
-        server = cast(_ThreadingHTTPServerWithContext, self.server)
         if log.level >= logging.DEBUG:
             super().log_request(code, size)
 
@@ -95,7 +94,6 @@ class _RedirectURIHandler(http.server.BaseHTTPRequestHandler):
 class _TokenSocketHandler(http.server.BaseHTTPRequestHandler):
     def log_request(self, code: Union[int, str] = '-',
                     size: Union[int, str] = '-') -> None:
-        server = cast(_ThreadingHTTPServerWithContext, self.server)
         if log.level >= logging.INFO:
             super().log_request(code, size)
 
@@ -449,7 +447,7 @@ class OAuth2ClientManager:
         authorization_url, _ = self.session.authorization_url(self._registration['authorize_endpoint'],
                                                               **pkce_challenge)
 
-        print('Please go to {} and authorize access.'.format(authorization_url))
+        print(f'Please go to {authorization_url} and authorize access.')
         if self._server:
             self._start_server()
             self._inform_user_of_listener()
@@ -483,20 +481,20 @@ class OAuth2ClientManager:
             self.token_changed.notify()
 
     def get_access_token(self) -> str:
-        if not self.token or not 'access_token' in self.token:
+        if not self.token or 'access_token' not in self.token:
             raise NoTokenError("No access token available")
         with self.token_lock:
             access_token = self.token['access_token']
         return access_token
 
     def write_access_token(self, filename: str) -> None:
-        if not self.token or not 'access_token' in self.token:
+        if not self.token or 'access_token' not in self.token:
             raise NoTokenError("No access token available.")
         with atomic_write(filename, overwrite=True) as access_file:
             print(self.token['access_token'], file=access_file)
 
     def _file_writer(self, filename: str) -> None:
-        if not self.token or not 'access_token' in self.token:
+        if not self.token or 'access_token' not in self.token:
             raise NoTokenError("No access token available.")
         my_token: Optional[str] = None
         while True:
