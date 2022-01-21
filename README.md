@@ -20,9 +20,9 @@ Then to install:
 
 ## Getting started
 
-To get started, you'll need to generate a refresh token.
+First generate a refresh token:
 
-    $ oauth2-clientd -a <clientid> [-P <provider>] /path/to/sessionfile
+    $ oauth2-clientd -a [-P <provider>] /path/to/sessionfile
 
 
 If the sessionfile exists, it will be not overwritten without --force.
