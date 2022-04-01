@@ -22,7 +22,7 @@ Then to install:
 
 To get started, you'll need to generate a refresh token.
 
-    $ oauth2-clientd -a <clientid> [-P <provider>] /path/to/sessionfile
+    $ oauth2-clientd -a -c <clientid> [-P <provider>] /path/to/sessionfile
 
 
 If the sessionfile exists, it will be not overwritten without --force.
