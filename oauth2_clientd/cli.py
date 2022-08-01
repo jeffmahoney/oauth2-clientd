@@ -72,7 +72,9 @@ def wait_for_refresh_timeout(oaclient: OAuth2ClientManager, thresh: int) -> None
 
     if timeout > 0:
         log.info(f"Waiting {int(timeout)}s to refresh token.")
-        time.sleep(timeout)
+        while timeout > 0:
+            time.sleep(min(timeout, thresh))
+            timeout = oaclient.access_token_expiry - thresh - time.time()
     else:
         log.info("Token has expired.")
 
@@ -175,7 +177,7 @@ def parse_arguments(config: ConfigParser) -> argparse.Namespace:
                         help='display loaded configuration and exit')
     parser.add_argument('-q', '--quiet', action='store_true', help='limit unnecessary output')
     parser.add_argument('-t', '--threshold', type=int, default=300,
-                        help='threshold before expiration to attempt to refresh tokens. (default=300s)')
+                        help='threshold before expiration to attempt to refresh tokens, also determines sleep granularity. (default=300s)')
     parser.add_argument('-u', '--update-hook', type=str, default=None,
                         help='path to command to call when token is updated (will receive access token on stdin)')
     parser.add_argument('--force', action='store_true', help='overwrite sessionfile if it exists')
