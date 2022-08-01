@@ -13,7 +13,10 @@ import contextlib
 import subprocess
 import logging
 from configparser import ConfigParser
-import importlib.resources as pkg_resources
+if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
+    import importlib_resources as pkg_resources
+else:
+    import importlib.resources as pkg_resources
 
 from typing import Any, Dict, List, Optional, TextIO, Union
 
