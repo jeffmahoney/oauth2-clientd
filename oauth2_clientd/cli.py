@@ -13,7 +13,10 @@ import contextlib
 import subprocess
 import logging
 from configparser import ConfigParser
-import importlib.resources as pkg_resources
+try:
+    import importlib.resources as pkg_resources
+except ImportError:
+    import importlib_resources as pkg_resources
 
 from typing import Any, Dict, List, Optional, TextIO, Union
 
