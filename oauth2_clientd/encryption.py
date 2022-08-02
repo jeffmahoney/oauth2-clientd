@@ -74,6 +74,9 @@ def crypto_padding() -> padding.OAEP:
 def encrypt(public_key_pem: bytes, data: bytes) -> Tuple[bytes, Dict[str, str]]:
     public_key = serialization.load_pem_public_key(public_key_pem, backend=default_backend())
 
+    if not isinstance(public_key, rsa.RSAPublicKey):
+        raise TypeError("Expected RSA key, got {type(public_key)}")
+
     key = os.urandom(32)
     nonce = os.urandom(16)
 
@@ -109,6 +112,10 @@ def decrypt(private_key: rsa.RSAPrivateKeyWithSerialization, cryptoparams: Dict[
     return decryptor.update(data) + decryptor.finalize()
 
 def decrypt_private_key(private_key_pem: bytes,
-                        password_bytes: bytes) -> rsa.RSAPublicKeyWithSerialization:
-    return serialization.load_pem_private_key(private_key_pem, password=password_bytes,
-                                                     backend=default_backend())
+                        password_bytes: bytes) -> rsa.RSAPrivateKey:
+    ret = serialization.load_pem_private_key(private_key_pem, password=password_bytes,
+                                             backend=default_backend())
+    if not isinstance(ret, rsa.RSAPrivateKey):
+        raise TypeError(f"Expected RSAPrivateKey not {type(ret)}")
+
+    return ret
