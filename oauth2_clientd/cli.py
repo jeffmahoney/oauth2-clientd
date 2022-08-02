@@ -67,16 +67,39 @@ class SignalHandler:
 def token_needs_refreshing(token: Dict[str, Any], threshold: int) -> bool:
     return token['expires_at'] + threshold > time.time()
 
+def get_boottime() -> int:
+    return int(time.clock_gettime(time.CLOCK_BOOTTIME))
+
+# This is a workaround. All implementations of sleep() in Python use
+# CLOCK_MONOTONIC, which has the advantage of never going backward but it
+# also stops while the system is suspended.  If the system is suspended for
+# longer than the specified threshold, we'll miss the renewal # window.
+# This workaround uses the CLOCK_BOOTTIME clock, which does _not_
+# stop while the system is suspended, but since there is no direct way to
+# access clock_nanosleep directly from Python, we'll have to settle for
+# a loop with short timeouts to check if we've passed the deadline.
+# [There is the monotonic_time third-party module but it uses dlopen to
+#  access clock_nanosleep and that's even worse of a hack IMO.]
+def wallclock_sleep(timeout: int, step: int = 60) -> None:
+    deadline = get_boottime() + timeout
+
+    while timeout > 0:
+        step = min(step, timeout)
+        time.sleep(step)
+
+        timeout = deadline - get_boottime()
+
 def wait_for_refresh_timeout(oaclient: OAuth2ClientManager, thresh: int) -> None:
     if not oaclient.token:
         raise NoTokenError("No token to refresh")
 
-    timeout = oaclient.access_token_expiry - thresh - time.time()
+    timeout = int(oaclient.access_token_expiry - thresh - time.time())
 
     if timeout > 0:
         log.info(f"Waiting {int(timeout)}s to refresh token.")
-        time.sleep(timeout)
-    else:
+        wallclock_sleep(timeout)
+
+    if time.time() > oaclient.access_token_expiry:
         log.info("Token has expired.")
 
 def run_update_hook(update_hook: str, access_token: str) -> None:
