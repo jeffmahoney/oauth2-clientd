@@ -151,7 +151,7 @@ class OAuth2ClientManager:
     def access_token_expiry(self) -> float:
         if not self.token:
             raise NoTokenError("No valid token found.")
-        if not 'expires_at' in self.token:
+        if 'expires_at' not in self.token:
             raise ValueError("Token is missing expiration")
         with self.token_lock:
             expiry = self.token['expires_at']
