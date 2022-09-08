@@ -68,7 +68,11 @@ def token_needs_refreshing(token: Dict[str, Any], threshold: int) -> bool:
     return token['expires_at'] + threshold > time.time()
 
 def get_boottime() -> int:
-    return int(time.clock_gettime(time.CLOCK_BOOTTIME))
+    try:
+        val = int(time.clock_gettime(time.CLOCK_BOOTTIME))
+    except AttributeError:
+        val = int(time.clock_gettime(time.CLOCK_MONOTONIC))
+    return val
 
 # This is a workaround. All implementations of sleep() in Python use
 # CLOCK_MONOTONIC, which has the advantage of never going backward but it
