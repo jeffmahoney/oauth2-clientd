@@ -67,13 +67,18 @@ class SignalHandler:
 def token_needs_refreshing(token: Dict[str, Any], threshold: int) -> bool:
     return token['expires_at'] + threshold > time.time()
 
+# CLOCK_BOOTTIME was added in Python 3.7, so we'll use CLOCK_REALTIME on
+# earlier releases.
 def get_boottime() -> int:
-    return int(time.clock_gettime(time.CLOCK_BOOTTIME))
+    try:
+        return int(time.clock_gettime(time.CLOCK_BOOTTIME))
+    except AttributeError:
+        return int(time.clock_gettime(time.CLOCK_REALTIME))
 
 # This is a workaround. All implementations of sleep() in Python use
 # CLOCK_MONOTONIC, which has the advantage of never going backward but it
 # also stops while the system is suspended.  If the system is suspended for
-# longer than the specified threshold, we'll miss the renewal # window.
+# longer than the specified threshold, we'll miss the renewal window.
 # This workaround uses the CLOCK_BOOTTIME clock, which does _not_
 # stop while the system is suspended, but since there is no direct way to
 # access clock_nanosleep directly from Python, we'll have to settle for
