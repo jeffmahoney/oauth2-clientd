@@ -16,7 +16,7 @@ except ImportError:
 
 setup(
     name="oauth2-clientd",
-    version="0.8",
+    version="0.8.2",
     python_requires='>=3.6',
 
     author="Jeff Mahoney",
