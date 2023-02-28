@@ -58,7 +58,7 @@ oauth2-clientd exports tokens in two ways:
 The following options can be used to start up an HTTP listener on the specified
 UNIX socket.  If the socket exists it will be removed and replaced.
 
-    $ oauth2-clientd -s /path/to/socket /path/to/authfile
+    $ oauth2-clientd -s /path/to/socket /path/to/sessionfile
 
 
 Your MUA can be configured to retreive the access token with a simple command:
@@ -69,7 +69,7 @@ Your MUA can be configured to retreive the access token with a simple command:
 If your client requires a plaintext file, the following command will write out
 such a file each time the token is refreshed:
 
-    $ oauth2-clientd -f /path/to/file /path/to/authfile
+    $ oauth2-clientd -f /path/to/file /path/to/sessionfile
 
 
 Both options can be used at the same time but each can only be specified once.
@@ -79,7 +79,7 @@ Both options can be used at the same time but each can only be specified once.
 The script can be daemonized using the -D option which takes the path
 to a logfile as an argument.
 
-    $ oauth2-clientd [other options] -D /path/to/logfile /path/to/authfile
+    $ oauth2-clientd [other options] -D /path/to/logfile /path/to/sessionfile
 
 
 ## Security
