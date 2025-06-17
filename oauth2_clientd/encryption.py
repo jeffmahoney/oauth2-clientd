@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 import getpass
 import os
 import sys
