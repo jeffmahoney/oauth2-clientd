@@ -1,0 +1,23 @@
+[project]
+name = "oauth2-clientd"
+version = "0.10.0"
+description = "OAUTH2 client that caches refresh tokens securely"
+authors = [
+    {name = "Jeff Mahoney",email = "jeffm@suse.com"}
+]
+license = {text = "GPL-2.0"}
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = [
+    "requests-oauthlib",
+    "python-daemon",
+    "cryptography",
+    "atomicwrites"
+]
+
+[project.scripts]
+oauth2-clientd = 'oauth2_clientd.cli:main'
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
