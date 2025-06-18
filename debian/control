@@ -1,0 +1,20 @@
+Source: python-oauth2-clientd
+Section: net
+Priority: optional
+Maintainer: Jeff Mahoney <jeffm@unknown>
+Rules-Requires-Root: no
+Build-Depends:
+ debhelper-compat (= 13),
+Standards-Version: 4.7.2
+Homepage: https://github.com/jeffmahoney/oauth2-clientd
+#Vcs-Browser: https://salsa.debian.org/debian/python-oauth2-clientd
+#Vcs-Git: https://salsa.debian.org/debian/python-oauth2-clientd.git
+
+Package: python-oauth2-clientd
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+Description: OAUTH2 client caching daemon
+ oauth2-clientd is a daemon that obtains, refreshes, and secures OAUTH2
+ credentials for use by other software.

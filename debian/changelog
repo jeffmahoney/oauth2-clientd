@@ -1,0 +1,5 @@
+python-oauth2-clientd (0.11.0-1) UNRELEASED; urgency=medium
+
+  * Initial release. (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+
+ -- Jeff Mahoney <jeffm@unknown>  Wed, 18 Jun 2025 15:02:10 +0000

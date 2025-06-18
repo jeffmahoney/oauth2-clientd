@@ -1,0 +1,10 @@
+Package: python-oauth2-clientd
+Version: 0.11.0-1
+Architecture: amd64
+Maintainer: Jeff Mahoney <jeffm@unknown>
+Installed-Size: 11
+Section: unknown
+Priority: optional
+Homepage: <insert the upstream URL, if relevant>
+Description: <insert up to 60 chars description>
+ <Insert long description, indented with spaces.>
