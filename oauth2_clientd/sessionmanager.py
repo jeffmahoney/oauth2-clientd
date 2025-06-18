@@ -16,9 +16,9 @@ import logging
 
 from typing import cast, Any, Dict, Optional, Tuple, Type, Union
 
-from atomicwrites import atomic_write
+from atomicwrites import atomic_write # type: ignore
 
-from requests_oauthlib import OAuth2Session # type: ignore
+from requests_oauthlib import OAuth2Session
 
 from .encryption import generate_rsa_keypair, decrypt_private_key, encrypt, decrypt
 from .encryption import NoPrivateKeyError
@@ -119,7 +119,7 @@ class _UnixSocketThreadingHTTPServer(_ThreadingHTTPServerWithContext):
     def server_bind(self) -> None:
         self.socket.bind(self.server_address[0])
 
-    def get_request(self) -> Tuple[Any, Tuple[str, int]]:
+    def get_request(self) -> Tuple[Any, Tuple[str | bytes | bytearray, int]]:
         req, _ = super().get_request()
         return req, self.server_address
 
@@ -130,7 +130,7 @@ class OAuth2ClientManager:
         self.session_file_path: Optional[str] = None
         self.public_key_pem: Optional[bytes] = None
         self.saved_session: Dict[str, Any] = {}
-        self.session: OAuth2Session = None
+        self.session: OAuth2Session
 
         self.token: Optional[Dict[str, Any]] = None
         self.token_lock = threading.Lock()
@@ -361,14 +361,16 @@ class OAuth2ClientManager:
         # refresh tokens but strips it in the response. oauthlib views that
         # as a changed scope event that is handled as an error unless relaxed.
         os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
+        # mypy doesn't handle kwargs well yet
         self.token = self.session.fetch_token(self._registration['token_endpoint'],
                                               authorization_response=self.authurl,
                                               include_client_id=True,
-                                              **self.client, code_verifier=verifier)
+                                              code_verifier=verifier, **self.client) # type: ignore
 
     def refresh_token(self) -> None:
         log.info("Starting token refresh")
-        new_token = self.session.refresh_token(self._registration['token_endpoint'], **self.client)
+        # mypy doesn't handle kwargs well yet
+        new_token = self.session.refresh_token(self._registration['token_endpoint'], **self.client) # type: ignore
         log.info("Token refreshed")
 
         with self.token_changed:

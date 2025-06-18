@@ -454,6 +454,7 @@ def main() -> None:
 
     logfile: Optional[TextIO] = None
     if daemonize:
+        logfile_handler : logging.StreamHandler[Any]
         try:
             # We open it here just to get an error for the user before
             # we daemonize.
