@@ -24,3 +24,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = [ "oauth2_clientd" ]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"oauth2_clientd" = ["data/*.conf"]
