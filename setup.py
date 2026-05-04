@@ -6,4 +6,6 @@ Setup file for installation
 
 from setuptools import setup
 
-setup()
+setup(
+    package_data={'oauth2_clientd': ['data/*.conf']}
+)
